@@ -190,14 +190,14 @@ func varBytes(tag byte, buff *Buffer) (ret interface{}, err error) {
 }
 func fastMap(tag byte, buff *Buffer) (ret interface{}, err error) {
 	if sz, err := fastSz(buff); err == nil {
-		ret, err := decodeMap(buff, sz)
+		ret, err = decodeMap(buff, sz)
 	}
 	return
 }
 
 func varIntMap(tag byte, buff *Buffer) (ret interface{}, err error) {
 	if sz, err := buff.ReadVarint(); err == nil {
-		ret, err := decodeMap(buff, sz)
+		ret, err = decodeMap(buff, sz)
 	}
 	return
 }
