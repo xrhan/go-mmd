@@ -95,16 +95,16 @@ func encodeUint(buffer *Buffer, i uint64) error {
 	if i == 0 {
 		buffer.WriteByte(0)
 	} else if i <= math.MaxUint8 {
-		buffer.WriteByte(0x01)
+		buffer.WriteByte(0x11)
 		buffer.WriteByte(byte(i))
 	} else if i <= math.MaxUint16 {
-		buffer.WriteByte(0x02)
+		buffer.WriteByte(0x12)
 		buffer.order.PutUint16(buffer.GetWritable(2), uint16(i))
 	} else if i <= math.MaxUint32 {
-		buffer.WriteByte(0x04)
+		buffer.WriteByte(0x14)
 		buffer.order.PutUint32(buffer.GetWritable(4), uint32(i))
 	} else if i <= math.MaxUint64 {
-		buffer.WriteByte(0x08)
+		buffer.WriteByte(0x18)
 		buffer.order.PutUint64(buffer.GetWritable(8), i)
 	} else {
 		return fmt.Errorf("Don't know how to encode int(%d)", i)

@@ -24,7 +24,7 @@ var allTypes []interface{} = []interface{}{
 	math.MaxUint8,
 	math.MaxUint16,
 	math.MaxUint32,
-	math.MaxUint64,
+	uint64(math.MaxUint64),
 	float32(-1.0),
 	math.MaxFloat32,
 	float64(-1.0),
