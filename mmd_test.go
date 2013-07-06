@@ -1,15 +1,15 @@
 package mmd
 
-import "testing"
+import (
+	"encoding/hex"
+	"testing"
+	"time"
+)
 
-// import "time"
-
-/*func TestConnect(t *testing.T) {
-	con := LocalConnect()
-	con.Close()
-}
-*/
 func TestEchoCall(t *testing.T) {
+	if testing.Short() {
+		t.Skip("network tests disabled")
+	}
 	mmdc := LocalConnect()
 	t.Log("Created mmd connection:", mmdc)
 	resp, err := mmdc.Call("echo", "Howdy Doody")
@@ -20,13 +20,21 @@ func TestEchoCall(t *testing.T) {
 
 func TestEncode(t *testing.T) {
 	buffer := NewBuffer(1024)
-	toEncode := "Hello"
-	// toEncode := []interface {
+	toEncode := []interface{}{
+		"Hello",
+		0,
+		0x7F,
+		0x7FFF,
+		0x7FFFFFFF,
+		0x7FFFFFFFFFFFFFFF,
+		true,
+		false,
+		[]int{1, 2, 3},
+		map[string]interface{}{"ABC": 1, "def": []byte{9, 8, 7}},
+		time.Now(),
+	}
+	// toEncode := []interface{} {
 	// 	0x01,
-	// 	0xFF,
-	// 	0xFFFF,
-	// 	0xFFFFFFFF,
-	// 	0xFFFFFFFFFFFFFFFF,
 	// 	true,
 	// 	false,
 	// 	"hello",
@@ -37,7 +45,12 @@ func TestEncode(t *testing.T) {
 	// 	// },
 	// 	time.Now(),
 	// 	}
-	Encode(buffer, toEncode)
 	t.Log("Encoding", toEncode)
-
+	err := Encode(buffer, toEncode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bytes := buffer.Flip().Bytes()
+	t.Log("bytes", len(bytes), cap(bytes))
+	t.Logf("Buffer: \n%s", hex.Dump(bytes))
 }

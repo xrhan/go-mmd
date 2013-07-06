@@ -7,16 +7,18 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 )
 
 type config struct {
 	url     string
 	readSz  int
 	writeSz int
+	appName string
 }
 
 func NewConfig(url string) *config {
-	return &config{url: url, readSz: 1024 * 1024, writeSz: 1024 * 1024}
+	return &config{url: url, readSz: 1024 * 1024, writeSz: 1024 * 1024, appName: fmt.Sprintf("Go:%s", os.Args[0])}
 }
 
 func chkErr(err error) {
@@ -72,7 +74,9 @@ func Connect(cfg *config) *MMDConn {
 	mmdc := &MMDConn{socket: conn, writeChan: make(chan []byte), readChan: make(chan []byte)}
 	go writer(mmdc)
 	go reader(mmdc)
-	mmdc.WriteFrame([]byte{1, 1})
+	handshake := []byte{1, 1}
+	handshake = append(handshake, cfg.appName...)
+	mmdc.WriteFrame(handshake)
 	fmt.Println("Connected:", mmdc)
 	return mmdc
 }

@@ -2,8 +2,10 @@ package mmd
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
+	"math"
+	"reflect"
+	"time"
 )
 
 //<<?CHANNEL_CREATE,Chan:16/binary,Type:1/binary,SvcSize:8/unsigned-integer,Svc:SvcSize/binary,Timeout:16/signed-integer,AT:16/binary,Body/binary>>
@@ -33,10 +35,128 @@ func Encode(buffer *Buffer, thing interface{}) error {
 		buffer.Write(ta)
 		buffer.Write(i.AuthToken)
 		Encode(buffer, i.Body)
+	case int:
+		return encodeInt(buffer, int64(i))
+	case uint:
+		return encodeUint(buffer, uint64(i))
+	case time.Time:
+		buffer.WriteByte('z')
+		sec := i.Unix()
+		nsec := i.UnixNano()
+		buffer.WriteInt64(int64((sec * 1024 * 1204) + (nsec / 1024)))
+	case []interface{}: // common case, don't reflect
+		buffer.WriteByte('a')
+		writeSz(buffer, len(i))
+		for _, item := range i {
+			err := Encode(buffer, item)
+			if err != nil {
+				return fmt.Errorf("Error encoding: %v - %v", item, err)
+			}
+		}
+	case bool:
+		if i {
+			buffer.WriteByte('t')
+		} else {
+			buffer.WriteByte('f')
+		}
 	default:
-		return errors.New(fmt.Sprintf("Don't know how to encode: %#v\n", i))
+		fmt.Println("Kicking it to reflect", i)
+		return reflectEncode(thing, buffer)
 	}
 	return nil
+}
+
+func encodeInt(buffer *Buffer, i int64) error {
+	if i == 0 {
+		buffer.WriteByte(0)
+	} else if i >= math.MinInt8 && i <= math.MaxInt8 {
+		buffer.WriteByte(0x01)
+		buffer.WriteByte(byte(i))
+	} else if i >= math.MinInt16 && i <= math.MaxInt16 {
+		buffer.WriteByte(0x02)
+		buffer.order.PutUint16(buffer.GetWritable(2), uint16(i))
+	} else if i >= math.MinInt32 && i <= math.MaxInt32 {
+		buffer.WriteByte(0x04)
+		buffer.order.PutUint32(buffer.GetWritable(4), uint32(i))
+	} else if i >= math.MinInt64 && i <= math.MaxInt64 {
+		buffer.WriteByte(0x08)
+		buffer.order.PutUint64(buffer.GetWritable(8), uint64(i))
+	} else {
+		return fmt.Errorf("Don't know how to encode int(%d)", i)
+	}
+	return nil
+}
+
+func encodeUint(buffer *Buffer, i uint64) error {
+	if i == 0 {
+		buffer.WriteByte(0)
+	} else if i <= math.MaxUint8 {
+		buffer.WriteByte(0x01)
+		buffer.WriteByte(byte(i))
+	} else if i <= math.MaxUint16 {
+		buffer.WriteByte(0x02)
+		buffer.order.PutUint16(buffer.GetWritable(2), uint16(i))
+	} else if i <= math.MaxUint32 {
+		buffer.WriteByte(0x04)
+		buffer.order.PutUint32(buffer.GetWritable(4), uint32(i))
+	} else if i <= math.MaxUint64 {
+		buffer.WriteByte(0x08)
+		buffer.order.PutUint64(buffer.GetWritable(8), i)
+	} else {
+		return fmt.Errorf("Don't know how to encode int(%d)", i)
+	}
+	return nil
+}
+
+func reflectEncode(thing interface{}, buffer *Buffer) error {
+	val := reflect.ValueOf(thing)
+	kind := val.Kind()
+	switch kind {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		fmt.Println("\tInt")
+		return encodeInt(buffer, val.Int())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		fmt.Println("\tInt")
+		return encodeUint(buffer, val.Uint())
+	case reflect.Slice:
+		fmt.Println("\tList")
+		buffer.WriteByte('a')
+		buffer.WriteByte(0x04)
+		buffer.order.PutUint32(buffer.GetWritable(4), uint32(val.Len()))
+		for i := 0; i < val.Len(); i++ {
+			item := val.Index(i)
+			if !item.CanInterface() {
+				return fmt.Errorf("Can't Interface() %s", val)
+			} else {
+				fmt.Println("List elem", i, item, item.Interface())
+				err := Encode(buffer, item.Interface())
+				if err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	case reflect.Map:
+		fmt.Println("\tMap")
+		buffer.WriteByte('r') // fast map
+		writeSz(buffer, val.Len())
+		for _, k := range val.MapKeys() {
+			ki := k.Interface()
+			vi := val.MapIndex(k).Interface()
+			fmt.Println("Map encoding", ki, "=", vi)
+			err := Encode(buffer, ki)
+			if err != nil {
+				return err
+			}
+			err = Encode(buffer, vi)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("Don't know how to encode (%s) %v", kind, thing)
+	}
 }
 
 func writeSz(buffer *Buffer, sz int) {

@@ -90,6 +90,9 @@ func (b *Buffer) ReadString(sz int) (string, error) {
 	return string(bytes), nil
 }
 
+func (b *Buffer) GetWritable(sz int) []byte {
+	return b.data[b.advance(sz):b.index]
+}
 func (b *Buffer) String() string {
 	return fmt.Sprintf("Buffer{index: %d, len: %d, cap: %d, order: %v}", b.index, len(b.data), cap(b.data), b.order)
 }
@@ -113,4 +116,8 @@ func (b *Buffer) ensureSpace(sz int) {
 		return
 	}
 	copy(b.data, make([]byte, cap(b.data)+sz))
+}
+
+func (b *Buffer) WriteInt64(i int64) {
+	b.order.PutUint64(b.GetWritable(8), uint64(i))
 }
