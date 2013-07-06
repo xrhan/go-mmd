@@ -35,15 +35,20 @@ func Encode(buffer *Buffer, thing interface{}) error {
 		buffer.Write(ta)
 		buffer.Write(i.AuthToken)
 		Encode(buffer, i.Body)
+	case float32:
+		buffer.WriteByte('d')
+		buffer.WriteFloat32(i)
+	case float64:
+		buffer.WriteByte('D')
+		buffer.WriteFloat64(i)
 	case int:
 		return encodeInt(buffer, int64(i))
 	case uint:
 		return encodeUint(buffer, uint64(i))
 	case time.Time:
 		buffer.WriteByte('z')
-		sec := i.Unix()
-		nsec := i.UnixNano()
-		buffer.WriteInt64(int64((sec * 1024 * 1204) + (nsec / 1024)))
+		fmt.Println(i.UnixNano() / 1000)
+		buffer.WriteInt64(int64(i.UnixNano() / 1000))
 	case []interface{}: // common case, don't reflect
 		buffer.WriteByte('a')
 		writeSz(buffer, len(i))
@@ -60,7 +65,6 @@ func Encode(buffer *Buffer, thing interface{}) error {
 			buffer.WriteByte('f')
 		}
 	default:
-		fmt.Println("Kicking it to reflect", i)
 		return reflectEncode(thing, buffer)
 	}
 	return nil
@@ -113,13 +117,10 @@ func reflectEncode(thing interface{}, buffer *Buffer) error {
 	kind := val.Kind()
 	switch kind {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		fmt.Println("\tInt")
 		return encodeInt(buffer, val.Int())
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		fmt.Println("\tInt")
 		return encodeUint(buffer, val.Uint())
 	case reflect.Slice:
-		fmt.Println("\tList")
 		buffer.WriteByte('a')
 		buffer.WriteByte(0x04)
 		buffer.order.PutUint32(buffer.GetWritable(4), uint32(val.Len()))
@@ -128,7 +129,6 @@ func reflectEncode(thing interface{}, buffer *Buffer) error {
 			if !item.CanInterface() {
 				return fmt.Errorf("Can't Interface() %s", val)
 			} else {
-				fmt.Println("List elem", i, item, item.Interface())
 				err := Encode(buffer, item.Interface())
 				if err != nil {
 					return err
@@ -137,13 +137,11 @@ func reflectEncode(thing interface{}, buffer *Buffer) error {
 		}
 		return nil
 	case reflect.Map:
-		fmt.Println("\tMap")
 		buffer.WriteByte('r') // fast map
 		writeSz(buffer, val.Len())
 		for _, k := range val.MapKeys() {
 			ki := k.Interface()
 			vi := val.MapIndex(k).Interface()
-			fmt.Println("Map encoding", ki, "=", vi)
 			err := Encode(buffer, ki)
 			if err != nil {
 				return err

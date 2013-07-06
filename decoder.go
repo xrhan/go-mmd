@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const microsInSecond = 1000 * 1000
+
 func Decode(buff *Buffer) (ret interface{}, err error) {
 	if tag, err := buff.ReadByte(); err == nil {
 		fn := decodeTable[tag]
@@ -74,26 +76,24 @@ func decodeFastUInt(tag byte, buff *Buffer) (interface{}, error) {
 	return fastUInt(tag&0x0F, buff)
 }
 
-const microToSecond = 1024 * 1024
-
 func decodeVarintTime(tag byte, buff *Buffer) (ret interface{}, err error) {
-	if sz, err := buff.ReadByte(); err == nil {
-		if t, err := decodeFastInt(sz, buff); err == nil {
-			ret = convertTime(t.(int))
-		}
+	t, err := buff.ReadVarint()
+	if err == nil {
+		ret = convertTime(int64(t))
 	}
 	return
 }
 
-func convertTime(t int) time.Time {
-	sec := t / microToSecond
-	nsec := (t % microToSecond) * 1024
-	return time.Unix(int64(sec), int64(nsec))
+func convertTime(t int64) time.Time {
+	fmt.Println("Decoding", t)
+	sec := t / microsInSecond
+	nsec := (t % microsInSecond) * 1000
+	return time.Unix(sec, nsec)
 
 }
 
 func decodeFastTime(tag byte, buff *Buffer) (ret interface{}, err error) {
-	t, err := taggedFastInt(buff)
+	t, err := buff.ReadInt64()
 	if err != nil {
 		return
 	}
@@ -256,19 +256,19 @@ func fastInt(sz byte, buff *Buffer) (ret int, err error) {
 	case 0x01:
 		var v byte
 		v, err = buff.ReadByte()
-		ret = int(v)
+		ret = int(int8(v))
 	case 0x02:
 		var v []byte
 		v, err = buff.Next(2)
-		ret = int(buff.order.Uint16(v))
+		ret = int(int16(buff.order.Uint16(v)))
 	case 0x04:
 		var v []byte
 		v, err = buff.Next(4)
-		ret = int(buff.order.Uint32(v))
+		ret = int(int32(buff.order.Uint32(v)))
 	case 0x08:
 		var v []byte
 		v, err = buff.Next(8)
-		ret = int(buff.order.Uint64(v))
+		ret = int(int64(buff.order.Uint64(v)))
 	}
 	return
 }

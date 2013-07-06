@@ -3,6 +3,7 @@ package mmd
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 )
 
 type Buffer struct {
@@ -120,4 +121,17 @@ func (b *Buffer) ensureSpace(sz int) {
 
 func (b *Buffer) WriteInt64(i int64) {
 	b.order.PutUint64(b.GetWritable(8), uint64(i))
+}
+func (b *Buffer) WriteFloat32(f float32) {
+	binary.BigEndian.PutUint32(b.GetWritable(4), math.Float32bits(f))
+}
+func (b *Buffer) WriteFloat64(f float64) {
+	binary.BigEndian.PutUint64(b.GetWritable(8), math.Float64bits(f))
+}
+func (b *Buffer) ReadInt64() (int64, error) {
+	v, err := b.Next(8)
+	if err != nil {
+		return 0, err
+	}
+	return int64(b.order.Uint64(v)), nil
 }
