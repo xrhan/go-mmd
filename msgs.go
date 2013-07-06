@@ -17,6 +17,11 @@ func NewChannelCreate(chanType ChannelType, service string, body interface{}) Ch
 	}
 }
 
+type MMDError struct {
+	code int
+	msg  interface{}
+}
+
 // No built in UUID type, so might as well make our own channel type
 type UUID []byte
 type ChannelId UUID

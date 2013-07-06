@@ -37,6 +37,7 @@ func TestEncode(t *testing.T) {
 	// 	// },
 	// 	time.Now(),
 	// 	}
+	Encode(buffer, toEncode)
 	t.Log("Encoding", toEncode)
 
 }

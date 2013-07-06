@@ -9,6 +9,18 @@ import (
 	"time"
 )
 
+func Decode(buff *Buffer) (ret interface{}, err error) {
+	if tag, err := buff.ReadByte(); err == nil {
+		fn := decodeTable[tag]
+		if fn == nil {
+			err = errors.New(fmt.Sprintf("Unsupported type tag: %c:%d", tag, tag))
+		} else {
+			ret, err = fn(tag, buff)
+		}
+	}
+	return
+}
+
 var decodeTable []func(byte, *Buffer) (interface{}, error)
 
 func init() { // this init() is here due to compiler bug(?) on init loop
@@ -53,46 +65,6 @@ func init() { // this init() is here due to compiler bug(?) on init loop
 		'#': decodeVarintTime,
 		'z': decodeFastTime,
 	}
-}
-
-func Decode(buff *Buffer) (ret interface{}, err error) {
-	if tag, err := buff.ReadByte(); err == nil {
-		fn := decodeTable[tag]
-		if fn == nil {
-			err = errors.New(fmt.Sprintf("Unsupported type tag: %c:%d", tag, tag))
-		} else {
-			ret, err = fn(tag, buff)
-		}
-	}
-	return
-}
-
-// func SDecode(buff *Buffer) (ret interface{}, err error) {
-// 	b, err := buff.ReadByte()
-// 	if err == nil {
-// 		switch b {
-// 		case 0x00:
-// 			ret = int(0)
-// 		case 0x10:
-// 			ret = uint(0)
-// 		case 0x01:
-// 			b, err := buff.ReadByte()
-// 			if err != nil {
-// 				ret = int(b)
-// 			}
-// 		case 0x11:
-// 			b, err := buff.ReadByte()
-// 			if err != nil {
-// 				ret = uint(b)
-// 			}
-// 		}
-// 	}
-// 	return
-// }
-
-type MMDError struct {
-	code int
-	msg  interface{}
 }
 
 func decodeFastInt(tag byte, buff *Buffer) (interface{}, error) {
@@ -282,16 +254,20 @@ func fastInt(sz byte, buff *Buffer) (ret int, err error) {
 	case 0x00:
 		ret = int(0)
 	case 0x01:
-		v, err := buff.ReadByte()
+		var v byte
+		v, err = buff.ReadByte()
 		ret = int(v)
 	case 0x02:
-		v, err := buff.Next(2)
+		var v []byte
+		v, err = buff.Next(2)
 		ret = int(buff.order.Uint16(v))
 	case 0x04:
-		v, err := buff.Next(4)
+		var v []byte
+		v, err = buff.Next(4)
 		ret = int(buff.order.Uint32(v))
 	case 0x08:
-		v, err := buff.Next(8)
+		var v []byte
+		v, err = buff.Next(8)
 		ret = int(buff.order.Uint64(v))
 	}
 	return
@@ -300,19 +276,27 @@ func fastInt(sz byte, buff *Buffer) (ret int, err error) {
 func fastUInt(sz byte, buff *Buffer) (ret uint, err error) {
 	switch sz {
 	case 0x00:
-		ret = uint(0)
+		ret = 0
 	case 0x01:
-		v, err := buff.ReadByte()
-		ret = uint(v)
+		var v byte
+		if v, err = buff.ReadByte(); err == nil {
+			ret = uint(v)
+		}
 	case 0x02:
-		v, err := buff.Next(2)
-		ret = uint(buff.order.Uint16(v))
+		var v []byte
+		if v, err = buff.Next(2); err == nil {
+			ret = uint(buff.order.Uint16(v))
+		}
 	case 0x04:
-		v, err := buff.Next(4)
-		ret = uint(buff.order.Uint32(v))
+		var v []byte
+		if v, err = buff.Next(4); err == nil {
+			ret = uint(buff.order.Uint32(v))
+		}
 	case 0x08:
-		v, err := buff.Next(8)
-		ret = uint(buff.order.Uint64(v))
+		var v []byte
+		if v, err = buff.Next(8); err == nil {
+			ret = uint(buff.order.Uint64(v))
+		}
 	}
 	return
 }
@@ -332,36 +316,6 @@ func varSz(buff *Buffer) (int, error) {
 func fastSz(buff *Buffer) (int, error) {
 	return taggedFastInt(buff)
 }
-
-// func decodeFastInt(tag byte, buff *Buffer) (interface{}, error) {
-// 	b, err := buff.ReadByte()
-// 	chkErr(err)
-// 	return int(fastUIntN(b&0xFF, buffer)), nil
-// }
-
-// func fastUInt(tag byte, buff *Buffer) (interface{}, error) {
-// 	return fastUIntN(tag&0x0F, buffer), nil
-// }
-
-// //TODO: this probably doesn't work for signed conversions as the high bit
-// func fastUIntN(sz byte, buff *Buffer) uint {
-// 	switch sz {
-// 	case 0:
-// 		return uint(0)
-// 	case 1:
-// 		b, err := buff.ReadByte()
-// 		chkErr(err)
-// 		return uint(b)
-// 	case 2:
-// 		return uint(buff.NextUInt16())
-// 	case 4:
-// 		return uint(binary.BigEndian.Uint32(buff.Next(4)))
-// 	case 8:
-// 		return uint(binary.BigEndian.Uint64(buff.Next(8)))
-// 	default:
-// 		panic(fmt.Sprintf("Invalid integer size: %d", sz))
-// 	}
-// }
 
 func badTag(msg string, b byte) string {
 	return fmt.Sprintf("%s %c:%d", msg, b, b)
