@@ -1,7 +1,7 @@
 package mmd
 
 import (
-	"bytes"
+	// "bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -24,6 +24,7 @@ func chkErr(err error) {
 		panic(err)
 	}
 }
+
 func LocalConnect() *MMDConn {
 	return Connect(NewConfig("localhost:9999"))
 }
@@ -38,7 +39,7 @@ func (c MMDConn) String() string {
 	return fmt.Sprintf("MMDConn{remote: %s, local: %s}", c.socket.RemoteAddr(), c.socket.LocalAddr())
 }
 
-func (c *MMDConn) Send(buff *bytes.Buffer) {
+func (c *MMDConn) Send(buff *Buffer) {
 	c.writeChan <- buff.Bytes()
 }
 func (c *MMDConn) Close() {
@@ -49,13 +50,14 @@ func (c *MMDConn) NextMessage() (interface{}, error) {
 	cm := <-c.readChan
 	fmt.Println("Decoding")
 	fmt.Println(hex.Dump(cm))
-	return Decode(bytes.NewBuffer(cm))
+	return Decode(Wrap(cm))
 }
+
 func (c *MMDConn) Call(service string, body interface{}) (interface{}, error) {
-	var buff bytes.Buffer
+	buff := NewBuffer(1024)
 	cc := NewChannelCreate(Call, service, body)
-	Encode(&buff, cc)
-	c.Send(&buff)
+	Encode(buff, cc)
+	c.Send(buff.Flip())
 	return c.NextMessage()
 }
 
@@ -86,21 +88,25 @@ func reader(c *MMDConn) {
 	defer cleanupReader(c)
 	for true {
 		num, err := c.socket.Read(fszb)
+		if num != 4 {
+			panic(fmt.Sprintf("Short read: %d", num))
+		}
 		if err == io.EOF {
 			fmt.Println("Reader closed")
 			return
 		}
 		chkErr(err)
-		fmt.Println("Read: ", num)
 		fsz := int(binary.BigEndian.Uint32(fszb))
-		fmt.Println("Bytes to read: ", fsz)
 		b := make([]byte, fsz)
+
+		reads := 0
 		for fsz > 0 {
 			r, e := c.socket.Read(b)
+			reads++
 			chkErr(e)
 			fsz = fsz - r
 		}
-		fmt.Println("Read packet\n", hex.Dump(b))
+		fmt.Printf("Read %d bytes in %d reads\n%s", fsz, reads, hex.Dump(b))
 		c.readChan <- b
 		break
 	}
@@ -113,9 +119,8 @@ func writer(c *MMDConn) {
 		case data, ok := <-c.writeChan:
 			if ok {
 				binary.BigEndian.PutUint32(fsz, uint32(len(data)))
-				fmt.Printf("Writing size:\n%s\n", hex.Dump(fsz))
 				c.socket.Write(fsz)
-				fmt.Printf("Writing data:\n%s\n", hex.Dump(data))
+				fmt.Printf("Writing %d bytes\n%s\n", len(data), hex.Dump(data))
 				c.socket.Write(data)
 			} else {
 				fmt.Println("Exiting")

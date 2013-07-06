@@ -1,14 +1,13 @@
 package mmd
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 )
 
 //<<?CHANNEL_CREATE,Chan:16/binary,Type:1/binary,SvcSize:8/unsigned-integer,Svc:SvcSize/binary,Timeout:16/signed-integer,AT:16/binary,Body/binary>>
-func Encode(buffer *bytes.Buffer, thing interface{}) error {
+func Encode(buffer *Buffer, thing interface{}) error {
 	switch i := thing.(type) {
 	case nil:
 		buffer.WriteByte('N')
@@ -35,12 +34,12 @@ func Encode(buffer *bytes.Buffer, thing interface{}) error {
 		buffer.Write(i.AuthToken)
 		Encode(buffer, i.Body)
 	default:
-		return errors.New(fmt.Sprintf("Don't know how to incode: %#v\n", i))
+		return errors.New(fmt.Sprintf("Don't know how to encode: %#v\n", i))
 	}
 	return nil
 }
 
-func writeSz(buffer *bytes.Buffer, sz int) {
+func writeSz(buffer *Buffer, sz int) {
 	if sz > 256 {
 		panic("sz must be <= 256")
 	}

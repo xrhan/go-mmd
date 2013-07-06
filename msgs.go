@@ -18,8 +18,9 @@ func NewChannelCreate(chanType ChannelType, service string, body interface{}) Ch
 }
 
 // No built in UUID type, so might as well make our own channel type
-type ChannelId []byte
-type AuthToken []byte
+type UUID []byte
+type ChannelId UUID
+type AuthToken UUID
 
 // Typesafe enum
 type ChannelType int
@@ -28,6 +29,10 @@ type ChannelType int
 	Encode(buffer *bytes.Buffer)
 }
 */
+func (uuid UUID) String() string {
+	return hex.EncodeToString(uuid)
+}
+
 func (c AuthToken) String() string {
 	return hex.EncodeToString(c)
 }

@@ -1,0 +1,116 @@
+package mmd
+
+import (
+	"encoding/binary"
+	"fmt"
+)
+
+type Buffer struct {
+	data  []byte
+	index int
+	order binary.ByteOrder
+}
+
+//Creates a new buffer of the specified size, with index of zero and big endian byte order
+func NewBuffer(size int) *Buffer {
+	return Wrap(make([]byte, size))
+}
+
+//Wraps a given []byte, defaults to index 0 and big endian byte order
+func Wrap(bytes []byte) *Buffer {
+	return &Buffer{bytes, 0, binary.BigEndian}
+}
+
+//Returns a new buffer who's limit is the index of this current buffer
+func (b *Buffer) Flip() *Buffer {
+	return &Buffer{b.data[:b.index], 0, b.order}
+}
+
+func (b *Buffer) Clear() {
+	b.index = 0
+}
+
+// Returns a new buffer using the same backing slice,
+// but with an independant index and byte order
+func (b *Buffer) Duplicate() *Buffer {
+	return &Buffer{b.data, b.index, b.order}
+}
+
+func (b *Buffer) Bytes() []byte {
+	return b.data
+}
+
+func (buff *Buffer) WriteByte(b byte) {
+	buff.data[buff.index] = b
+	buff.index++
+}
+
+func (b *Buffer) ReadByte() (ret byte, err error) {
+	ret = b.data[b.index]
+	b.index++
+	return
+}
+
+func (b *Buffer) Compact() {
+	copy(b.data, b.data[b.index:])
+	b.index = 0
+
+}
+
+func (b *Buffer) ReadVarint() (i int, e error) {
+	if r, e := binary.ReadVarint(b); e == nil {
+		return int(r), nil
+	}
+	return
+}
+
+func (b *Buffer) Write(bytes []byte) {
+	l := len(bytes)
+	b.ensureSpace(l)
+	copy(b.data[b.index:], bytes)
+	b.index += l
+}
+
+func (b *Buffer) WriteString(str string) {
+	l := len(str)
+	b.ensureSpace(l)
+	copy(b.data[b.index:], str)
+	b.index += l
+}
+
+func (b *Buffer) Position(idx int) {
+	b.index = idx
+}
+
+func (b *Buffer) ReadString(sz int) (string, error) {
+	bytes, err := b.Next(sz)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
+}
+
+func (b *Buffer) String() string {
+	return fmt.Sprintf("Buffer{index: %d, len: %d, cap: %d, order: %v}", b.index, len(b.data), cap(b.data), b.order)
+}
+
+func (b *Buffer) Next(n int) ([]byte, error) {
+	if b.index+n > len(b.data) {
+		return nil, fmt.Errorf("Can't read %d bytes from %s", n, b)
+	}
+	return b.data[b.advance(n):b.index], nil
+}
+
+func (b *Buffer) advance(sz int) (ret int) {
+	ret = b.index
+	b.index += sz
+	return
+}
+
+func (b *Buffer) ensureSpace(sz int) {
+	need := b.index + sz
+	if cap(b.data) > need {
+		return
+	}
+	copy(b.data, make([]byte, cap(b.data)+sz))
+}
