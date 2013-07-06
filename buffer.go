@@ -41,9 +41,10 @@ func (b *Buffer) Bytes() []byte {
 	return b.data
 }
 
-func (buff *Buffer) WriteByte(b byte) {
+func (buff *Buffer) WriteByte(b byte) error {
 	buff.data[buff.index] = b
 	buff.index++
+	return nil
 }
 
 func (b *Buffer) ReadByte() (ret byte, err error) {
@@ -65,11 +66,12 @@ func (b *Buffer) ReadVarint() (i int, e error) {
 	return
 }
 
-func (b *Buffer) Write(bytes []byte) {
+func (b *Buffer) Write(bytes []byte) error {
 	l := len(bytes)
 	b.ensureSpace(l)
 	copy(b.data[b.index:], bytes)
 	b.index += l
+	return nil
 }
 
 func (b *Buffer) WriteString(str string) {
