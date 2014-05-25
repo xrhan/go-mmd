@@ -1,6 +1,7 @@
 package mmd
 
 import (
+	"crypto/rand"
 	"encoding/hex"
 )
 
@@ -8,13 +9,21 @@ import (
 //TODO: switch to raw struct and set defaults upon usage
 func NewChannelCreate(chanType ChannelType, service string, body interface{}) ChannelCreate {
 	return ChannelCreate{
-		ChannelId: ChannelId{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+		ChannelId: ChannelId(newUUID()),
 		Type:      chanType,
 		Service:   service,
 		Timeout:   3,
-		AuthToken: AuthToken{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+		AuthToken: AuthToken(newUUID()),
 		Body:      body,
 	}
+}
+func newUUID() UUID {
+	b := make([]byte, 16)
+	_, err := rand.Read(b)
+	if err != nil {
+		panic(err)
+	}
+	return UUID(b)
 }
 
 type MMDError struct {
@@ -23,7 +32,7 @@ type MMDError struct {
 }
 
 // No built in UUID type, so might as well make our own channel type
-type UUID []byte
+type UUID string
 type ChannelId UUID
 type AuthToken UUID
 
@@ -34,15 +43,18 @@ type ChannelType int
 	Encode(buffer *bytes.Buffer)
 }
 */
-func (uuid UUID) String() string {
-	return hex.EncodeToString(uuid)
+func (u UUID) Bytes() []byte {
+	return []byte(u)
+}
+func (u UUID) String() string {
+	return hex.EncodeToString([]byte(u))
 }
 
 func (c AuthToken) String() string {
-	return hex.EncodeToString(c)
+	return UUID(c).String()
 }
 func (c ChannelId) String() string {
-	return hex.EncodeToString(c)
+	return UUID(c).String()
 }
 
 const (
@@ -60,12 +72,8 @@ type ChannelCreate struct {
 	Body      interface{}
 }
 
-type ChannelClose struct {
-	ChannelId ChannelId
-	Body      interface{}
-}
-
-type ChannelMessage struct {
-	ChannelId ChannelId
-	Body      interface{}
+type ChannelMsg struct {
+	IsClose bool
+	Channel ChannelId
+	Body    interface{}
 }

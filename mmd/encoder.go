@@ -19,21 +19,21 @@ func Encode(buffer *Buffer, thing interface{}) error {
 		buffer.WriteString(i)
 	case ChannelCreate:
 		buffer.WriteByte('c')
-		buffer.Write(i.ChannelId)
+		buffer.Write([]byte(i.ChannelId))
 		switch i.Type {
 		case Call:
 			buffer.WriteByte('C')
 		case Subscribe:
 			buffer.WriteByte('S')
 		default:
-			panic("Unknown type")
+			return fmt.Errorf("Unknown type: %v", i.Type)
 		}
 		buffer.WriteByte(byte(len(i.Service)))
 		buffer.WriteString(i.Service)
 		ta := make([]byte, 2)
 		binary.BigEndian.PutUint16(ta, uint16(i.Timeout))
 		buffer.Write(ta)
-		buffer.Write(i.AuthToken)
+		buffer.Write([]byte(i.AuthToken))
 		Encode(buffer, i.Body)
 	case float32:
 		buffer.WriteByte('d')
@@ -47,7 +47,6 @@ func Encode(buffer *Buffer, thing interface{}) error {
 		return encodeUint(buffer, uint64(i))
 	case time.Time:
 		buffer.WriteByte('z')
-		fmt.Println(i.UnixNano() / 1000)
 		buffer.WriteInt64(int64(i.UnixNano() / 1000))
 	case []interface{}: // common case, don't reflect
 		buffer.WriteByte('a')

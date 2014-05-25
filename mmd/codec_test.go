@@ -2,8 +2,8 @@ package mmd
 
 import (
 	"encoding/hex"
+	"fmt"
 	"math"
-	"reflect"
 	"testing"
 	"time"
 )
@@ -31,7 +31,12 @@ var allTypes []interface{} = []interface{}{
 	math.MaxFloat64,
 	[]int{1, 2, 3},
 	map[string]interface{}{"ABC": 1, "def": []byte{9, 8, 7}},
-	time.Now(),
+	nowtime(),
+}
+
+func nowtime() time.Time { //microsecond resolution time
+	t := time.Now()
+	return time.Unix(t.Unix(), t.UnixNano()/1000*1000)
 }
 
 func TestCodecEncode(t *testing.T) {
@@ -59,7 +64,9 @@ func TestCodecEncodeDecode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(toEncode, decoded) {
-		t.Fatalf("Not equal\n   Orig: %v\nDecoded: %v", toEncode, decoded)
+	encstr := fmt.Sprint(toEncode)
+	decstr := fmt.Sprint(decoded)
+	if encstr != decstr {
+		t.Fatalf("Not equal\n   Orig: %s\nDecoded: %s", encstr, decstr)
 	}
 }

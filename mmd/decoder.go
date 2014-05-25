@@ -1,9 +1,8 @@
 package mmd
 
 import (
-	// "bytes"
 	"encoding/binary"
-	"errors"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"time"
@@ -11,16 +10,18 @@ import (
 
 const microsInSecond = 1000 * 1000
 
-func Decode(buff *Buffer) (ret interface{}, err error) {
-	if tag, err := buff.ReadByte(); err == nil {
-		fn := decodeTable[tag]
-		if fn == nil {
-			err = errors.New(fmt.Sprintf("Unsupported type tag: %c:%d", tag, tag))
-		} else {
-			ret, err = fn(tag, buff)
-		}
+func Decode(buff *Buffer) (interface{}, error) {
+	tag, err := buff.ReadByte()
+	if err != nil {
+		return nil, err
 	}
-	return
+	fn := decodeTable[tag]
+	if fn == nil {
+		return nil, fmt.Errorf("Unsupported type tag: %c:%d", tag, tag)
+	} else {
+		return fn(tag, buff)
+	}
+
 }
 
 var decodeTable []func(byte, *Buffer) (interface{}, error)
@@ -85,7 +86,6 @@ func decodeVarintTime(tag byte, buff *Buffer) (ret interface{}, err error) {
 }
 
 func convertTime(t int64) time.Time {
-	fmt.Println("Decoding", t)
 	sec := t / microsInSecond
 	nsec := (t % microsInSecond) * 1000
 	return time.Unix(sec, nsec)
@@ -144,46 +144,55 @@ func fastError(tag byte, buff *Buffer) (ret interface{}, err error) {
 	return
 }
 
-func varError(tag byte, buff *Buffer) (ret interface{}, err error) {
-	return
+func varError(tag byte, buff *Buffer) (interface{}, error) {
+	return nil, fmt.Errorf("varError not supported")
 }
 
-func fastBytes(tag byte, buff *Buffer) (ret interface{}, err error) {
-	if sz, err := fastSz(buff); err != nil {
-		return buff.Next(sz)
+func fastBytes(tag byte, buff *Buffer) (interface{}, error) {
+	sz, err := fastSz(buff)
+	if err != nil {
+		return nil, err
 	}
-	return
+	return buff.Next(sz)
 }
-func varBytes(tag byte, buff *Buffer) (ret interface{}, err error) {
-	if sz, err := buff.ReadVarint(); err != nil {
-		ret, err = buff.Next(sz)
+func varBytes(tag byte, buff *Buffer) (interface{}, error) {
+	sz, err := buff.ReadVaruint()
+	if err != nil {
+		return nil, err
 	}
-	return
+	return buff.Next(int(sz))
 }
-func fastMap(tag byte, buff *Buffer) (ret interface{}, err error) {
-	if sz, err := fastSz(buff); err == nil {
-		ret, err = decodeMap(buff, sz)
+func fastMap(tag byte, buff *Buffer) (interface{}, error) {
+	sz, err := fastSz(buff)
+	if err != nil {
+		return nil, err
 	}
-	return
-}
-
-func varIntMap(tag byte, buff *Buffer) (ret interface{}, err error) {
-	if sz, err := buff.ReadVarint(); err == nil {
-		ret, err = decodeMap(buff, sz)
-	}
-	return
+	return decodeMap(buff, uint(sz))
 }
 
-func decodeMap(buff *Buffer, num int) (interface{}, error) {
+func varIntMap(tag byte, buff *Buffer) (interface{}, error) {
+	sz, err := buff.ReadVaruint()
+	if err != nil {
+		return nil, err
+	}
+	return decodeMap(buff, sz)
+}
+
+func decodeMap(buff *Buffer, num uint) (interface{}, error) {
+	if num < 0 {
+		str := hex.Dump(buff.data[:200])
+		return nil, fmt.Errorf("Invalid map size: %d in:\n%s", num, str)
+	}
 	ret := make(map[interface{}]interface{}, num)
-	for i := 0; i < num; i++ {
+	var i uint
+	for ; i < num; i++ {
 		key, kerr := Decode(buff)
 		if kerr != nil {
-			return nil, errors.New(fmt.Sprintf("Failed to decode key: %s", kerr))
+			return nil, fmt.Errorf("Failed to decode key: %s", kerr)
 		}
 		val, verr := Decode(buff)
 		if verr != nil {
-			return nil, errors.New(fmt.Sprintf("Failed to decode value: %s", verr))
+			return nil, fmt.Errorf("Failed to decode value: %s", verr)
 		}
 		ret[key] = val
 	}
@@ -191,18 +200,20 @@ func decodeMap(buff *Buffer, num int) (interface{}, error) {
 	return ret, nil
 }
 
-func fastArray(tag byte, buff *Buffer) (ret interface{}, err error) {
-	if sz, err := taggedFastInt(buff); err == nil {
-		ret, err = decodeArray(buff, sz)
+func fastArray(tag byte, buff *Buffer) (interface{}, error) {
+	sz, err := fastSz(buff)
+	if err != nil {
+		return nil, err
 	}
-	return
+	return decodeArray(buff, sz)
 }
 
-func varIntArray(tag byte, buff *Buffer) (ret interface{}, err error) {
-	if sz, err := varSz(buff); err == nil {
-		ret, err = decodeArray(buff, sz)
+func varIntArray(tag byte, buff *Buffer) (interface{}, error) {
+	sz, err := varSz(buff)
+	if err != nil {
+		return nil, err
 	}
-	return
+	return decodeArray(buff, sz)
 }
 
 func decodeArray(buff *Buffer, num int) (interface{}, error) {
@@ -310,11 +321,19 @@ func varString(tag byte, buff *Buffer) (interface{}, error) {
 }
 
 func varSz(buff *Buffer) (int, error) {
-	return varInt(buff)
+	i, err := varUInt(buff)
+	if err != nil {
+		return 0, err
+	}
+	return int(i), nil
 }
 
 func fastSz(buff *Buffer) (int, error) {
-	return taggedFastInt(buff)
+	i, err := taggedFastUInt(buff)
+	if err != nil {
+		return 0, err
+	}
+	return int(i), nil
 }
 
 func badTag(msg string, b byte) string {
@@ -328,24 +347,28 @@ func fastString(tag byte, buff *Buffer) (ret interface{}, err error) {
 	return
 }
 
-func decodeClose(tag byte, buff *Buffer) (ret interface{}, err error) {
-	if chanId, err := buff.Next(16); err == nil {
-		if body, err := Decode(buff); err == nil {
-			ret = ChannelClose{
-				ChannelId: ChannelId(chanId),
-				Body:      body,
-			}
-		}
+func decodeClose(tag byte, buff *Buffer) (interface{}, error) {
+	chanId, err := buff.Next(16)
+	if err != nil {
+		return nil, err
 	}
-	return
+	body, err := Decode(buff)
+	if err != nil {
+		return nil, err
+	}
+	return ChannelMsg{
+		IsClose: true,
+		Channel: ChannelId(chanId),
+		Body:    body,
+	}, nil
 }
 
 func decodeMessage(tag byte, buff *Buffer) (ret interface{}, err error) {
 	if chanId, err := buff.Next(16); err == nil {
 		if body, err := Decode(buff); err == nil {
-			ret = &ChannelMessage{
-				ChannelId: ChannelId(chanId),
-				Body:      body,
+			ret = &ChannelMsg{
+				Channel: ChannelId(chanId),
+				Body:    body,
 			}
 		}
 	}

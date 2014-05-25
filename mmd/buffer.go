@@ -59,13 +59,6 @@ func (b *Buffer) Compact() {
 
 }
 
-func (b *Buffer) ReadVarint() (i int, e error) {
-	if r, e := binary.ReadVarint(b); e == nil {
-		return int(r), nil
-	}
-	return
-}
-
 func (b *Buffer) Write(bytes []byte) error {
 	l := len(bytes)
 	b.ensureSpace(l)
@@ -121,6 +114,15 @@ func (b *Buffer) ensureSpace(sz int) {
 	copy(b.data, make([]byte, cap(b.data)+sz))
 }
 
+func (b *Buffer) ReadVaruint() (uint, error) {
+	u, err := binary.ReadUvarint(b)
+	return uint(u), err
+}
+
+func (b *Buffer) ReadVarint() (int, error) {
+	i, err := binary.ReadVarint(b)
+	return int(i), err
+}
 func (b *Buffer) WriteInt64(i int64) {
 	b.order.PutUint64(b.GetWritable(8), uint64(i))
 }
