@@ -2,7 +2,6 @@ package mmd
 
 import (
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"io"
 	logpkg "log"
@@ -55,7 +54,7 @@ func Connect(cfg *config) (*MMDConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("Connecting to: %s / %s\n", cfg.url, addr)
+	// log.Printf("Connecting to: %s / %s\n", cfg.url, addr)
 	conn, err := net.DialTCP("tcp", nil, addr)
 	if err != nil {
 		return nil, err
@@ -72,7 +71,7 @@ func Connect(cfg *config) (*MMDConn, error) {
 	handshake := []byte{1, 1}
 	handshake = append(handshake, cfg.appName...)
 	mmdc.WriteFrame(handshake)
-	log.Println("Connected:", mmdc)
+	// log.Println("Connected:", mmdc)
 	return mmdc, nil
 }
 
@@ -162,7 +161,7 @@ func reader(c *MMDConn) {
 		for offset < fsz {
 			sz, err := c.socket.Read(buff[offset:fsz])
 			if err != nil {
-				log.Println("Error reading message:", err)
+				log.Panic("Error reading message:", err)
 				return
 			}
 			reads++
@@ -170,7 +169,7 @@ func reader(c *MMDConn) {
 		}
 		m, err := Decode(Wrap(buff[:fsz]))
 		if err != nil {
-			log.Println("Error decoding buffer:", err)
+			log.Panic("Error decoding buffer:", err)
 		} else {
 			switch msg := m.(type) {
 			case ChannelMsg:
@@ -191,8 +190,7 @@ func reader(c *MMDConn) {
 					}
 				}
 			default:
-				log.Println("Unknown message type:", msg, "value:", m, "buffer")
-				log.Print("\n" + hex.Dump(buff[:200]))
+				log.Panic("Unknown message type:", m)
 			}
 		}
 	}
