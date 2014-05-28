@@ -2,12 +2,14 @@ package mmd
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	logpkg "log"
 	"net"
 	"os"
 	"sync"
+	"time"
 )
 
 var log = logpkg.New(os.Stdout, "[mmd] ", logpkg.LstdFlags|logpkg.Lmicroseconds)
@@ -20,23 +22,33 @@ type config struct {
 }
 
 type MMDConn struct {
-	socket    *net.TCPConn
-	writeChan chan []byte
-	dispatch  map[ChannelId]chan ChannelMsg
-	dlock     sync.RWMutex
+	socket      *net.TCPConn
+	writeChan   chan []byte
+	dispatch    map[ChannelId]chan ChannelMsg
+	dlock       sync.RWMutex
+	callTimeout time.Duration
 }
 
-func NewConfig(url string) *config {
+func (c *MMDConn) SetDefaultCallTimeout(dur time.Duration) {
+	c.callTimeout = dur
+}
+func (c *MMDConn) GetDefaultCallTimeout() time.Duration {
+	return c.callTimeout
+}
+func newConfig(url string) *config {
 	return &config{
 		url:     url,
-		readSz:  1024 * 1024,
-		writeSz: 1024 * 1024,
+		readSz:  64 * 1024,
+		writeSz: 64 * 1024,
 		appName: fmt.Sprintf("Go:%s", os.Args[0]),
 	}
 }
 
 func LocalConnect() (*MMDConn, error) {
-	return Connect(NewConfig("localhost:9999"))
+	return Connect(newConfig("localhost:9999"))
+}
+func ConnectTo(host string, port int) (*MMDConn, error) {
+	return Connect(newConfig(fmt.Sprintf("%s:%d", host, port)))
 }
 func Connect(cfg *config) (*MMDConn, error) {
 	addr, err := net.ResolveTCPAddr("tcp", cfg.url)
@@ -51,8 +63,9 @@ func Connect(cfg *config) (*MMDConn, error) {
 	conn.SetWriteBuffer(cfg.writeSz)
 	conn.SetReadBuffer(cfg.readSz)
 	mmdc := &MMDConn{socket: conn,
-		writeChan: make(chan []byte),
-		dispatch:  make(map[ChannelId]chan ChannelMsg, 1024),
+		writeChan:   make(chan []byte),
+		dispatch:    make(map[ChannelId]chan ChannelMsg, 1024),
+		callTimeout: time.Second * 5,
 	}
 	go writer(mmdc)
 	go reader(mmdc)
@@ -72,10 +85,14 @@ func (c *MMDConn) Call(service string, body interface{}) (interface{}, error) {
 	}
 	ch := make(chan ChannelMsg, 1)
 	c.registerChannel(cc.ChannelId, ch)
+	defer c.unregisterChannel(cc.ChannelId)
 	c.Send(buff.Flip())
-	//TODO: timeout here
-	ret := <-ch
-	return ret.Body, nil
+	select {
+	case ret := <-ch:
+		return ret.Body, nil
+	case <-time.After(c.callTimeout):
+		return nil, fmt.Errorf("Timeout waiting for: %s", service)
+	}
 }
 
 func (c *MMDConn) registerChannel(cid ChannelId, ch chan ChannelMsg) {
@@ -119,6 +136,7 @@ func cleanupReader(c *MMDConn) {
 
 func reader(c *MMDConn) {
 	fszb := make([]byte, 4)
+	buff := make([]byte, 256)
 	defer cleanupReader(c)
 	for {
 		num, err := c.socket.Read(fszb)
@@ -135,19 +153,22 @@ func reader(c *MMDConn) {
 			return
 		}
 		fsz := int(binary.BigEndian.Uint32(fszb))
-		b := make([]byte, fsz)
+		if len(buff) < fsz {
+			buff = make([]byte, fsz)
+		}
 
 		reads := 0
-		for fsz > 0 {
-			sz, err := c.socket.Read(b)
+		offset := 0
+		for offset < fsz {
+			sz, err := c.socket.Read(buff[offset:fsz])
 			if err != nil {
 				log.Println("Error reading message:", err)
 				return
 			}
 			reads++
-			fsz -= sz
+			offset += sz
 		}
-		m, err := Decode(Wrap(b))
+		m, err := Decode(Wrap(buff[:fsz]))
 		if err != nil {
 			log.Println("Error decoding buffer:", err)
 		} else {
@@ -170,7 +191,8 @@ func reader(c *MMDConn) {
 					}
 				}
 			default:
-				log.Println("Unknown message:", m)
+				log.Println("Unknown message type:", msg, "value:", m, "buffer")
+				log.Print("\n" + hex.Dump(buff[:200]))
 			}
 		}
 	}

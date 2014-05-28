@@ -196,7 +196,6 @@ func decodeMap(buff *Buffer, num uint) (interface{}, error) {
 		}
 		ret[key] = val
 	}
-
 	return ret, nil
 }
 
