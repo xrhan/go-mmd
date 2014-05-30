@@ -59,9 +59,9 @@ func Encode(buffer *Buffer, thing interface{}) error {
 		}
 	case bool:
 		if i {
-			buffer.WriteByte('t')
+			buffer.WriteByte('T')
 		} else {
-			buffer.WriteByte('f')
+			buffer.WriteByte('F')
 		}
 	default:
 		return reflectEncode(thing, buffer)
