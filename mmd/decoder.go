@@ -365,7 +365,7 @@ func decodeClose(tag byte, buff *Buffer) (interface{}, error) {
 func decodeMessage(tag byte, buff *Buffer) (ret interface{}, err error) {
 	if chanId, err := buff.Next(16); err == nil {
 		if body, err := Decode(buff); err == nil {
-			ret = &ChannelMsg{
+			ret = ChannelMsg{
 				Channel: ChannelId(chanId),
 				Body:    body,
 			}

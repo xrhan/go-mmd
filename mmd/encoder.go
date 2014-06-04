@@ -35,6 +35,14 @@ func Encode(buffer *Buffer, thing interface{}) error {
 		buffer.Write(ta)
 		buffer.Write([]byte(i.AuthToken))
 		Encode(buffer, i.Body)
+	case ChannelMsg:
+		if i.IsClose {
+			buffer.WriteByte('X')
+		} else {
+			buffer.WriteByte('M')
+		}
+		buffer.Write([]byte(i.Channel))
+		Encode(buffer, i.Body)
 	case float32:
 		buffer.WriteByte('d')
 		buffer.WriteFloat32(i)

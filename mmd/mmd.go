@@ -2,16 +2,19 @@ package mmd
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	logpkg "log"
 	"net"
 	"os"
+	"reflect"
 	"sync"
 	"time"
 )
 
 var log = logpkg.New(os.Stdout, "[mmd] ", logpkg.LstdFlags|logpkg.Lmicroseconds)
+var EOC = errors.New("End Of Channel")
 
 type config struct {
 	url     string
@@ -26,6 +29,39 @@ type MMDConn struct {
 	dispatch    map[ChannelId]chan ChannelMsg
 	dlock       sync.RWMutex
 	callTimeout time.Duration
+}
+type MMDChan struct {
+	ch  chan ChannelMsg
+	con *MMDConn
+	Id  ChannelId
+}
+
+func (c *MMDChan) NextMessage() (ChannelMsg, error) {
+	a, ok := <-c.ch
+	if !ok {
+		return ChannelMsg{}, EOC
+	}
+	return a, nil
+}
+func (c *MMDChan) Close(body interface{}) error {
+	cm := ChannelMsg{Channel: c.Id, Body: body, IsClose: true}
+	buff := NewBuffer(1024)
+	err := Encode(buff, cm)
+	if err != nil {
+		return err
+	}
+	c.con.Send(buff.Flip())
+	return nil
+}
+func (c *MMDChan) Send(body interface{}) error {
+	cm := ChannelMsg{Channel: c.Id, Body: body}
+	buff := NewBuffer(1024)
+	err := Encode(buff, cm)
+	if err != nil {
+		return err
+	}
+	c.con.Send(buff.Flip())
+	return nil
 }
 
 func (c *MMDConn) SetDefaultCallTimeout(dur time.Duration) {
@@ -73,6 +109,21 @@ func Connect(cfg *config) (*MMDConn, error) {
 	mmdc.WriteFrame(handshake)
 	// log.Println("Connected:", mmdc)
 	return mmdc, nil
+}
+
+func (c *MMDConn) Subscribe(service string, body interface{}) (*MMDChan, error) {
+	buff := NewBuffer(1024)
+	cc := NewChannelCreate(Call, service, body)
+	cc.Type = Subscribe
+	err := Encode(buff, cc)
+	if err != nil {
+		return nil, err
+	}
+	ch := make(chan ChannelMsg, 1)
+	c.registerChannel(cc.ChannelId, ch)
+	defer c.unregisterChannel(cc.ChannelId)
+	c.Send(buff.Flip())
+	return &MMDChan{ch: ch, con: c, Id: cc.ChannelId}, nil
 }
 
 func (c *MMDConn) Call(service string, body interface{}) (interface{}, error) {
@@ -167,6 +218,7 @@ func reader(c *MMDConn) {
 			reads++
 			offset += sz
 		}
+		log.Println("Decoding:", fsz, "bytes")
 		m, err := Decode(Wrap(buff[:fsz]))
 		if err != nil {
 			log.Panic("Error decoding buffer:", err)
@@ -190,7 +242,7 @@ func reader(c *MMDConn) {
 					}
 				}
 			default:
-				log.Panic("Unknown message type:", m)
+				log.Panic("Unknown message type:", reflect.TypeOf(msg), msg)
 			}
 		}
 	}
