@@ -145,7 +145,15 @@ func fastError(tag byte, buff *Buffer) (ret interface{}, err error) {
 }
 
 func varError(tag byte, buff *Buffer) (interface{}, error) {
-	return nil, fmt.Errorf("varError not supported")
+	code, err := varInt(buff)
+	if err != nil {
+		return nil, err
+	}
+	body, err := Decode(buff)
+	if err != nil {
+		return nil, err
+	}
+	return MMDError{code, body}, nil
 }
 
 func fastBytes(tag byte, buff *Buffer) (interface{}, error) {

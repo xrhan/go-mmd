@@ -139,7 +139,13 @@ func (c *MMDConn) Call(service string, body interface{}) (interface{}, error) {
 	c.Send(buff.Flip())
 	select {
 	case ret := <-ch:
-		return ret.Body, nil
+		e, ok := ret.Body.(MMDError)
+		log.Println("ok:", ok)
+		if ok {
+			return nil, fmt.Errorf("MMD Error: %d: %v", e.code, e.msg)
+		} else {
+			return ret.Body, nil
+		}
 	case <-time.After(c.callTimeout):
 		return nil, fmt.Errorf("Timeout waiting for: %s", service)
 	}
