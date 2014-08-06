@@ -17,7 +17,7 @@ func Decode(buff *Buffer) (interface{}, error) {
 	}
 	fn := decodeTable[tag]
 	if fn == nil {
-		return nil, fmt.Errorf("Unsupported type tag: %c:%d", tag, tag)
+		return nil, fmt.Errorf("Unsupported type tag: %c:%daaa", tag, tag)
 	} else {
 		return fn(tag, buff)
 	}
@@ -40,6 +40,7 @@ func init() { // this init() is here due to compiler bug(?) on init loop
 		0x18: decodeFastUInt,
 		'S':  varString,
 		's':  fastString,
+		'C':  decodeVarIntCreate,
 		'X':  decodeClose,
 		'M':  decodeMessage,
 		'i':  decodeVaruint,
@@ -68,6 +69,42 @@ func init() { // this init() is here due to compiler bug(?) on init loop
 		'#': decodeVarintTime,
 		'z': decodeFastTime,
 	}
+}
+
+func decodeVarIntCreate(tag byte, buff *Buffer) (interface{}, error) {
+
+	chanId, err := decodeChanId(buff)
+	if err != nil {
+		return nil, err
+	}
+	chanType, err := decodeChannelType(buff)
+	if err != nil {
+		return nil, err
+	}
+	service, err := readVarString(buff)
+	if err != nil {
+		return nil, err
+	}
+	timeout, err := buff.ReadVarint()
+	if err != nil {
+		return nil, err
+	}
+	authToken, err := decodeAuthToken(buff)
+	if err != nil {
+		return nil, err
+	}
+	body, err := Decode(buff)
+	if err != nil {
+		return nil, err
+	}
+	return ChannelCreate{
+		ChannelId: ChannelId(chanId),
+		Type:      chanType,
+		Service:   service,
+		Timeout:   int64(timeout),
+		AuthToken: AuthToken(authToken),
+		Body:      body,
+	}, nil
 }
 
 func decodeFastInt(tag byte, buff *Buffer) (interface{}, error) {
@@ -100,9 +137,36 @@ func decodeFastTime(tag byte, buff *Buffer) (ret interface{}, err error) {
 	ret = convertTime(t)
 	return
 }
-
+func decodeChannelType(buff *Buffer) (ChannelType, error) {
+	b, err := buff.ReadByte()
+	if err != nil {
+		return Call, err
+	}
+	switch b {
+	case 'C':
+		return Call, nil
+	case 'S':
+		return Subscribe, nil
+	default:
+		return Call, fmt.Errorf("Unknown channel type; %c:%d", b, b)
+	}
+}
 func decodeByte(tag byte, buff *Buffer) (interface{}, error) {
 	return buff.ReadByte()
+}
+func decodeChanId(buff *Buffer) (ChannelId, error) {
+	b, err := buff.Next(16)
+	if err != nil {
+		return "<ERROR>", err
+	}
+	return ChannelId(b), nil
+}
+func decodeAuthToken(buff *Buffer) (AuthToken, error) {
+	b, err := buff.Next(16)
+	if err != nil {
+		return "<ERROR>", err
+	}
+	return AuthToken(b), nil
 }
 func decodeUUID(tag byte, buff *Buffer) (interface{}, error) {
 	return buff.Next(16)
@@ -163,6 +227,7 @@ func fastBytes(tag byte, buff *Buffer) (interface{}, error) {
 	}
 	return buff.Next(sz)
 }
+
 func varBytes(tag byte, buff *Buffer) (interface{}, error) {
 	sz, err := buff.ReadVaruint()
 	if err != nil {
@@ -320,13 +385,16 @@ func fastUInt(sz byte, buff *Buffer) (ret uint, err error) {
 }
 
 func varString(tag byte, buff *Buffer) (interface{}, error) {
+	return readVarString(buff)
+}
+
+func readVarString(buff *Buffer) (string, error) {
 	sz, err := binary.ReadUvarint(buff)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	return buff.ReadString(int(sz))
 }
-
 func varSz(buff *Buffer) (int, error) {
 	i, err := varUInt(buff)
 	if err != nil {

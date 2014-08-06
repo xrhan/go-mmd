@@ -16,6 +16,8 @@ import (
 var log = logpkg.New(os.Stdout, "[mmd] ", logpkg.LstdFlags|logpkg.Lmicroseconds)
 var EOC = errors.New("End Of Channel")
 
+type ServiceFunc func(*MMDConn, *MMDChan, *ChannelCreate)
+
 type config struct {
 	url     string
 	readSz  int
@@ -29,7 +31,9 @@ type MMDConn struct {
 	dispatch    map[ChannelId]chan ChannelMsg
 	dlock       sync.RWMutex
 	callTimeout time.Duration
+	services    map[string]ServiceFunc
 }
+
 type MMDChan struct {
 	ch  chan ChannelMsg
 	con *MMDConn
@@ -70,6 +74,22 @@ func (c *MMDConn) SetDefaultCallTimeout(dur time.Duration) {
 func (c *MMDConn) GetDefaultCallTimeout() time.Duration {
 	return c.callTimeout
 }
+
+func (c *MMDConn) RegisterLocalService(name string, fn ServiceFunc) error {
+	c.services[name] = fn
+	ok, err := c.Call("serviceregistry", map[string]interface{}{
+		"action": "registerLocal",
+		"name":   name,
+	})
+	if err == nil && ok != "ok" {
+		err = fmt.Errorf("Unexpected return: %v", ok)
+	}
+	if err != nil {
+		delete(c.services, name)
+	}
+	return err
+}
+
 func newConfig(url string) *config {
 	return &config{
 		url:     url,
@@ -101,13 +121,13 @@ func Connect(cfg *config) (*MMDConn, error) {
 		writeChan:   make(chan []byte),
 		dispatch:    make(map[ChannelId]chan ChannelMsg, 1024),
 		callTimeout: time.Second * 5,
+		services:    make(map[string]ServiceFunc),
 	}
 	go writer(mmdc)
 	go reader(mmdc)
 	handshake := []byte{1, 1}
 	handshake = append(handshake, cfg.appName...)
 	mmdc.WriteFrame(handshake)
-	// log.Println("Connected:", mmdc)
 	return mmdc, nil
 }
 
@@ -140,7 +160,6 @@ func (c *MMDConn) Call(service string, body interface{}) (interface{}, error) {
 	select {
 	case ret := <-ch:
 		e, ok := ret.Body.(MMDError)
-		log.Println("ok:", ok)
 		if ok {
 			return nil, fmt.Errorf("MMD Error: %d: %v", e.code, e.msg)
 		} else {
@@ -224,7 +243,6 @@ func reader(c *MMDConn) {
 			reads++
 			offset += sz
 		}
-		log.Println("Decoding:", fsz, "bytes")
 		m, err := Decode(Wrap(buff[:fsz]))
 		if err != nil {
 			log.Panic("Error decoding buffer:", err)
@@ -247,6 +265,14 @@ func reader(c *MMDConn) {
 						log.Println("Unknown channel:", msg.Channel, "discarding message")
 					}
 				}
+			case ChannelCreate:
+				fn, ok := c.services[msg.Service]
+				if !ok {
+					log.Println("Unknown service:", msg.Service, "cannot process", msg)
+				}
+				ch := make(chan ChannelMsg, 1)
+				c.registerChannel(msg.ChannelId, ch)
+				fn(c, &MMDChan{ch: ch, con: c, Id: msg.ChannelId}, &msg)
 			default:
 				log.Panic("Unknown message type:", reflect.TypeOf(msg), msg)
 			}

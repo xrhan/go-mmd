@@ -31,7 +31,6 @@ type MMDError struct {
 	msg  interface{}
 }
 
-// No built in UUID type, so might as well make our own channel type
 type UUID string
 type ChannelId UUID
 type AuthToken UUID

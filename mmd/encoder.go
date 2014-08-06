@@ -1,14 +1,16 @@
 package mmd
 
 import (
+	"encoding"
 	"encoding/binary"
 	"fmt"
 	"math"
+	"net"
 	"reflect"
+	"sync"
 	"time"
 )
 
-//<<?CHANNEL_CREATE,Chan:16/binary,Type:1/binary,SvcSize:8/unsigned-integer,Svc:SvcSize/binary,Timeout:16/signed-integer,AT:16/binary,Body/binary>>
 func Encode(buffer *Buffer, thing interface{}) error {
 	switch i := thing.(type) {
 	case nil:
@@ -65,6 +67,8 @@ func Encode(buffer *Buffer, thing interface{}) error {
 				return fmt.Errorf("Error encoding: %v - %v", item, err)
 			}
 		}
+	case net.IPAddr:
+		return Encode(buffer, i.String())
 	case bool:
 		if i {
 			buffer.WriteByte('T')
@@ -119,10 +123,74 @@ func encodeUint(buffer *Buffer, i uint64) error {
 	return nil
 }
 
+type fieldInfo struct {
+	key string
+	num int
+}
+type structInfo struct {
+	size   int
+	fields []fieldInfo
+}
+
+var structMap = make(map[reflect.Type]*structInfo)
+var structMapLock sync.RWMutex
+
+func getStructInfo(st reflect.Type) *structInfo {
+	structMapLock.RLock()
+	sinfo, ok := structMap[st]
+	structMapLock.RUnlock()
+	if ok {
+		return sinfo
+	}
+	var si structInfo
+	for i := 0; i < st.NumField(); i++ {
+		f := st.Field(i)
+		if f.PkgPath != "" {
+			continue
+		}
+		si.size++
+		si.fields = append(si.fields, fieldInfo{f.Name, i})
+	}
+	structMapLock.Lock()
+	structMap[st] = &si
+	structMapLock.Unlock()
+	return &si
+}
+
 func reflectEncode(thing interface{}, buffer *Buffer) error {
+	tm, ok := thing.(encoding.TextMarshaler)
+	if ok {
+		b, err := tm.MarshalText()
+		if err != nil {
+			return err
+		}
+		return Encode(buffer, string(b))
+	}
 	val := reflect.ValueOf(thing)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+
 	kind := val.Kind()
 	switch kind {
+	case reflect.Struct:
+		buffer.WriteByte('r')
+		buffer.WriteByte(0x04)
+		si := getStructInfo(val.Type())
+
+		buffer.order.PutUint32(buffer.GetWritable(4), uint32(si.size))
+		for _, f := range si.fields {
+			err := Encode(buffer, f.key)
+			if err != nil {
+				return err
+			}
+			err = Encode(buffer, val.Field(f.num).Interface())
+			if err != nil {
+				return err
+			}
+
+		}
+		return nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return encodeInt(buffer, val.Int())
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
