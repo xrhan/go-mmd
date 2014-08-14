@@ -49,6 +49,7 @@ func (c *MMDChan) NextMessage() (ChannelMsg, error) {
 }
 func (c *MMDChan) Close(body interface{}) error {
 	cm := ChannelMsg{Channel: c.Id, Body: body, IsClose: true}
+	c.con.unregisterChannel(c.Id)
 	buff := NewBuffer(1024)
 	err := Encode(buff, cm)
 	if err != nil {
@@ -177,7 +178,10 @@ func (c *MMDConn) registerChannel(cid ChannelId, ch chan ChannelMsg) {
 }
 func (c *MMDConn) unregisterChannel(cid ChannelId) chan ChannelMsg {
 	c.dlock.Lock()
-	ret := c.dispatch[cid]
+	ret, ok := c.dispatch[cid]
+	if ok {
+		delete(c.dispatch, cid)
+	}
 	c.dlock.Unlock()
 	return ret
 }
