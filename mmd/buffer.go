@@ -42,6 +42,7 @@ func (b *Buffer) Bytes() []byte {
 }
 
 func (buff *Buffer) WriteByte(b byte) error {
+	buff.ensureSpace(1)
 	buff.data[buff.index] = b
 	buff.index++
 	return nil
@@ -101,6 +102,7 @@ func (b *Buffer) Next(n int) ([]byte, error) {
 }
 
 func (b *Buffer) advance(sz int) (ret int) {
+	b.ensureSpace(sz)
 	ret = b.index
 	b.index += sz
 	return
