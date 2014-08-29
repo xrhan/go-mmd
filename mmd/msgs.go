@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 )
 
+var NO_AUTH_TOKEN = string(make([]byte, 16))
+
 //Probably not useful as a public function
 //TODO: switch to raw struct and set defaults upon usage
 func NewChannelCreate(chanType ChannelType, service string, body interface{}) ChannelCreate {
@@ -13,7 +15,7 @@ func NewChannelCreate(chanType ChannelType, service string, body interface{}) Ch
 		Type:      chanType,
 		Service:   service,
 		Timeout:   3,
-		AuthToken: AuthToken(newUUID()),
+		AuthToken: AuthToken(NO_AUTH_TOKEN),
 		Body:      body,
 	}
 }
@@ -57,8 +59,8 @@ func (c ChannelId) String() string {
 }
 
 const (
-	Call      ChannelType = iota
-	Subscribe ChannelType = iota
+	CallChan ChannelType = iota
+	SubChan  ChannelType = iota
 )
 
 // Familiar MMD Message types

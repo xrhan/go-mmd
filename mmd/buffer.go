@@ -98,7 +98,9 @@ func (b *Buffer) Next(n int) ([]byte, error) {
 	if b.index+n > len(b.data) {
 		return nil, fmt.Errorf("Can't read %d bytes from %s", n, b)
 	}
-	return b.data[b.advance(n):b.index], nil
+	ret := make([]byte, n)
+	copy(ret, b.data[b.advance(n):b.index])
+	return ret, nil
 }
 
 func (b *Buffer) advance(sz int) (ret int) {

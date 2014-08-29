@@ -23,9 +23,9 @@ func Encode(buffer *Buffer, thing interface{}) error {
 		buffer.WriteByte('c')
 		buffer.Write([]byte(i.ChannelId))
 		switch i.Type {
-		case Call:
+		case CallChan:
 			buffer.WriteByte('C')
-		case Subscribe:
+		case SubChan:
 			buffer.WriteByte('S')
 		default:
 			return fmt.Errorf("Unknown type: %v", i.Type)

@@ -40,6 +40,15 @@ type MMDChan struct {
 	Id  ChannelId
 }
 
+func Call(service string, body interface{}) (interface{}, error) {
+	lc, err := LocalConnect()
+	if err != nil {
+		return nil, err
+	}
+	defer lc.Close()
+	return lc.Call(service, body)
+}
+
 func (c *MMDChan) NextMessage() (ChannelMsg, error) {
 	a, ok := <-c.ch
 	if !ok {
@@ -134,8 +143,7 @@ func Connect(cfg *config) (*MMDConn, error) {
 
 func (c *MMDConn) Subscribe(service string, body interface{}) (*MMDChan, error) {
 	buff := NewBuffer(1024)
-	cc := NewChannelCreate(Call, service, body)
-	cc.Type = Subscribe
+	cc := NewChannelCreate(SubChan, service, body)
 	err := Encode(buff, cc)
 	if err != nil {
 		return nil, err
@@ -149,7 +157,7 @@ func (c *MMDConn) Subscribe(service string, body interface{}) (*MMDChan, error) 
 
 func (c *MMDConn) Call(service string, body interface{}) (interface{}, error) {
 	buff := NewBuffer(1024)
-	cc := NewChannelCreate(Call, service, body)
+	cc := NewChannelCreate(CallChan, service, body)
 	err := Encode(buff, cc)
 	if err != nil {
 		return nil, err
@@ -221,7 +229,6 @@ func reader(c *MMDConn) {
 		num, err := c.socket.Read(fszb)
 		if err != nil {
 			if err == io.EOF {
-				fmt.Println("Reader closed")
 				return
 			}
 			log.Println("Error reading frame size:", err)
@@ -301,7 +308,6 @@ func writer(c *MMDConn) {
 					}
 				}
 			} else {
-				log.Println("Exiting")
 				c.socket.CloseWrite()
 				return
 			}

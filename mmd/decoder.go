@@ -140,15 +140,15 @@ func decodeFastTime(tag byte, buff *Buffer) (ret interface{}, err error) {
 func decodeChannelType(buff *Buffer) (ChannelType, error) {
 	b, err := buff.ReadByte()
 	if err != nil {
-		return Call, err
+		return CallChan, err
 	}
 	switch b {
 	case 'C':
-		return Call, nil
+		return CallChan, nil
 	case 'S':
-		return Subscribe, nil
+		return SubChan, nil
 	default:
-		return Call, fmt.Errorf("Unknown channel type; %c:%d", b, b)
+		return CallChan, fmt.Errorf("Unknown channel type; %c:%d", b, b)
 	}
 }
 func decodeByte(tag byte, buff *Buffer) (interface{}, error) {
@@ -431,11 +431,13 @@ func decodeClose(tag byte, buff *Buffer) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ChannelMsg{
+	// log.Println("Got chan id", err, chanId, ChannelId(chanId))
+	ret := ChannelMsg{
 		IsClose: true,
 		Channel: ChannelId(chanId),
 		Body:    body,
-	}, nil
+	}
+	return ret, nil
 }
 
 func decodeMessage(tag byte, buff *Buffer) (ret interface{}, err error) {
