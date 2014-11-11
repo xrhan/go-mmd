@@ -85,10 +85,10 @@ func (c *MMDConn) GetDefaultCallTimeout() time.Duration {
 	return c.callTimeout
 }
 
-func (c *MMDConn) RegisterLocalService(name string, fn ServiceFunc) error {
+func (c *MMDConn) registerServiceUtil(name string, fn ServiceFunc, registryAction string) error {
 	c.services[name] = fn
 	ok, err := c.Call("serviceregistry", map[string]interface{}{
-		"action": "registerLocal",
+		"action": registryAction,
 		"name":   name,
 	})
 	if err == nil && ok != "ok" {
@@ -98,6 +98,15 @@ func (c *MMDConn) RegisterLocalService(name string, fn ServiceFunc) error {
 		delete(c.services, name)
 	}
 	return err
+}
+
+func (c *MMDConn) RegisterLocalService(name string, fn ServiceFunc) error {
+	return c.registerServiceUtil(name, fn, "registerLocal")
+}
+
+
+func (c *MMDConn) RegisterService(name string, fn ServiceFunc) error {
+	return c.registerServiceUtil(name, fn, "register")
 }
 
 func newConfig(url string) *config {
