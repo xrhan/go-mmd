@@ -233,9 +233,6 @@ func reflectEncode(thing interface{}, buffer *Buffer) error {
 }
 
 func writeSz(buffer *Buffer, sz int) {
-	if sz > 256 {
-		panic("sz must be <= 256")
-	}
-	buffer.WriteByte(0x01)
-	buffer.WriteByte(byte(sz))
+	buffer.WriteByte(0x04)
+	buffer.WriteInt32(int32(sz))
 }
