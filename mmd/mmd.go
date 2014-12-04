@@ -104,7 +104,6 @@ func (c *MMDConn) RegisterLocalService(name string, fn ServiceFunc) error {
 	return c.registerServiceUtil(name, fn, "registerLocal")
 }
 
-
 func (c *MMDConn) RegisterService(name string, fn ServiceFunc) error {
 	return c.registerServiceUtil(name, fn, "register")
 }
@@ -159,7 +158,6 @@ func (c *MMDConn) Subscribe(service string, body interface{}) (*MMDChan, error) 
 	}
 	ch := make(chan ChannelMsg, 1)
 	c.registerChannel(cc.ChannelId, ch)
-	defer c.unregisterChannel(cc.ChannelId)
 	c.Send(buff.Flip())
 	return &MMDChan{ch: ch, con: c, Id: cc.ChannelId}, nil
 }
