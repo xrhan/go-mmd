@@ -130,6 +130,9 @@ func (b *Buffer) ReadVarint() (int, error) {
 func (b *Buffer) WriteInt64(i int64) {
 	b.order.PutUint64(b.GetWritable(8), uint64(i))
 }
+func (b *Buffer) WriteInt32(i int32) {
+	b.order.PutUint32(b.GetWritable(4), uint32(i))
+}
 func (b *Buffer) WriteFloat32(f float32) {
 	binary.BigEndian.PutUint32(b.GetWritable(4), math.Float32bits(f))
 }
