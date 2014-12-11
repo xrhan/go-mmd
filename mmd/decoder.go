@@ -235,6 +235,7 @@ func varBytes(tag byte, buff *Buffer) (interface{}, error) {
 	}
 	return buff.Next(int(sz))
 }
+
 func fastMap(tag byte, buff *Buffer) (interface{}, error) {
 	sz, err := fastSz(buff)
 	if err != nil {

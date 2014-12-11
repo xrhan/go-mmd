@@ -58,6 +58,10 @@ func Encode(buffer *Buffer, thing interface{}) error {
 	case time.Time:
 		buffer.WriteByte('z')
 		buffer.WriteInt64(int64(i.UnixNano() / 1000))
+	case []byte:
+		buffer.WriteByte('q')
+		writeSz(buffer, len(i))
+		buffer.Write(i)
 	case []interface{}: // common case, don't reflect
 		buffer.WriteByte('a')
 		writeSz(buffer, len(i))

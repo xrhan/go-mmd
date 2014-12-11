@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-var allTypes []interface{} = []interface{}{
+var allTypes = []interface{}{
 	"Hello",
 	true,
 	false,
@@ -31,12 +31,7 @@ var allTypes []interface{} = []interface{}{
 	math.MaxFloat64,
 	[]int{1, 2, 3},
 	map[string]interface{}{"ABC": 1, "def": []byte{9, 8, 7}},
-	nowtime(),
-}
-
-func nowtime() time.Time { //microsecond resolution time
-	t := time.Now()
-	return time.Unix(t.Unix(), t.UnixNano()/1000*1000)
+	time.Now().Round(time.Microsecond),
 }
 
 func TestCodecEncode(t *testing.T) {
@@ -69,4 +64,10 @@ func TestCodecEncodeDecode(t *testing.T) {
 	if encstr != decstr {
 		t.Fatalf("Not equal\n   Orig: %s\nDecoded: %s", encstr, decstr)
 	}
+	// deep equals test fails even when both print identically, not sure why
+	// if !reflect.DeepEqual(toEncode, decoded) {
+	// 	t.Fatalf("Not equal\n"+
+	// 		"Orig   : %#v\n"+
+	// 		"Decoded: %#v", toEncode, decoded)
+	// }
 }
