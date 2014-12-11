@@ -11,6 +11,7 @@ import (
 	"time"
 )
 
+// Encode serializes 'thing' into buffer
 func Encode(buffer *Buffer, thing interface{}) error {
 	switch i := thing.(type) {
 	case nil:
@@ -207,11 +208,10 @@ func reflectEncode(thing interface{}, buffer *Buffer) error {
 			item := val.Index(i)
 			if !item.CanInterface() {
 				return fmt.Errorf("Can't Interface() %s", val)
-			} else {
-				err := Encode(buffer, item.Interface())
-				if err != nil {
-					return err
-				}
+			}
+			err := Encode(buffer, item.Interface())
+			if err != nil {
+				return err
 			}
 		}
 		return nil

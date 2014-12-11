@@ -10,6 +10,7 @@ import (
 
 const microsInSecond = 1000 * 1000
 
+// Decode decodes the next mmd message from a given buffer
 func Decode(buff *Buffer) (interface{}, error) {
 	tag, err := buff.ReadByte()
 	if err != nil {
@@ -18,10 +19,8 @@ func Decode(buff *Buffer) (interface{}, error) {
 	fn := decodeTable[tag]
 	if fn == nil {
 		return nil, fmt.Errorf("Unsupported type tag: %c:%daaa", tag, tag)
-	} else {
-		return fn(tag, buff)
 	}
-
+	return fn(tag, buff)
 }
 
 var decodeTable []func(byte, *Buffer) (interface{}, error)
@@ -73,7 +72,7 @@ func init() { // this init() is here due to compiler bug(?) on init loop
 
 func decodeVarIntCreate(tag byte, buff *Buffer) (interface{}, error) {
 
-	chanId, err := decodeChanId(buff)
+	chanID, err := decodeChanID(buff)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +97,7 @@ func decodeVarIntCreate(tag byte, buff *Buffer) (interface{}, error) {
 		return nil, err
 	}
 	return ChannelCreate{
-		ChannelId: ChannelId(chanId),
+		ChannelId: ChannelId(chanID),
 		Type:      chanType,
 		Service:   service,
 		Timeout:   int64(timeout),
@@ -154,7 +153,7 @@ func decodeChannelType(buff *Buffer) (ChannelType, error) {
 func decodeByte(tag byte, buff *Buffer) (interface{}, error) {
 	return buff.ReadByte()
 }
-func decodeChanId(buff *Buffer) (ChannelId, error) {
+func decodeChanID(buff *Buffer) (ChannelId, error) {
 	b, err := buff.Next(16)
 	if err != nil {
 		return "<ERROR>", err
@@ -424,7 +423,7 @@ func fastString(tag byte, buff *Buffer) (ret interface{}, err error) {
 }
 
 func decodeClose(tag byte, buff *Buffer) (interface{}, error) {
-	chanId, err := buff.Next(16)
+	chanID, err := buff.Next(16)
 	if err != nil {
 		return nil, err
 	}
@@ -435,17 +434,17 @@ func decodeClose(tag byte, buff *Buffer) (interface{}, error) {
 	// log.Println("Got chan id", err, chanId, ChannelId(chanId))
 	ret := ChannelMsg{
 		IsClose: true,
-		Channel: ChannelId(chanId),
+		Channel: ChannelId(chanID),
 		Body:    body,
 	}
 	return ret, nil
 }
 
 func decodeMessage(tag byte, buff *Buffer) (ret interface{}, err error) {
-	if chanId, err := buff.Next(16); err == nil {
+	if chanID, err := buff.Next(16); err == nil {
 		if body, err := Decode(buff); err == nil {
 			ret = ChannelMsg{
-				Channel: ChannelId(chanId),
+				Channel: ChannelId(chanID),
 				Body:    body,
 			}
 		}

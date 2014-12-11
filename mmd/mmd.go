@@ -14,8 +14,11 @@ import (
 )
 
 var log = logpkg.New(os.Stdout, "[mmd] ", logpkg.LstdFlags|logpkg.Lmicroseconds)
+
+// EOC Signals close of MMD channel
 var EOC = errors.New("End Of Channel")
 
+// ServiceFunc Handler callback for registered services
 type ServiceFunc func(*MMDConn, *MMDChan, *ChannelCreate)
 
 type config struct {
@@ -25,6 +28,7 @@ type config struct {
 	appName string
 }
 
+// MMDConn Connection and channel dispatch map
 type MMDConn struct {
 	socket      *net.TCPConn
 	writeChan   chan []byte
@@ -34,19 +38,11 @@ type MMDConn struct {
 	services    map[string]ServiceFunc
 }
 
+// MMDChan MMD Channel
 type MMDChan struct {
 	ch  chan ChannelMsg
 	con *MMDConn
 	Id  ChannelId
-}
-
-func Call(service string, body interface{}) (interface{}, error) {
-	lc, err := LocalConnect()
-	if err != nil {
-		return nil, err
-	}
-	defer lc.Close()
-	return lc.Call(service, body)
 }
 
 func (c *MMDChan) NextMessage() (ChannelMsg, error) {
@@ -76,6 +72,16 @@ func (c *MMDChan) Send(body interface{}) error {
 	}
 	c.con.Send(buff.Flip())
 	return nil
+}
+
+// Call Calls a service
+func Call(service string, body interface{}) (interface{}, error) {
+	lc, err := LocalConnect()
+	if err != nil {
+		return nil, err
+	}
+	defer lc.Close()
+	return lc.Call(service, body)
 }
 
 func (c *MMDConn) SetDefaultCallTimeout(dur time.Duration) {
@@ -178,9 +184,8 @@ func (c *MMDConn) Call(service string, body interface{}) (interface{}, error) {
 		e, ok := ret.Body.(MMDError)
 		if ok {
 			return nil, fmt.Errorf("MMD Error: %d: %v", e.code, e.msg)
-		} else {
-			return ret.Body, nil
 		}
+		return ret.Body, nil
 	case <-time.After(c.callTimeout):
 		return nil, fmt.Errorf("Timeout waiting for: %s", service)
 	}
