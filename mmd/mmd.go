@@ -169,8 +169,13 @@ func (c *MMDConn) Subscribe(service string, body interface{}) (*MMDChan, error) 
 }
 
 func (c *MMDConn) Call(service string, body interface{}) (interface{}, error) {
+	return c.CallAuthenticated(service, AuthToken(NO_AUTH_TOKEN), body)
+}
+
+func (c *MMDConn) CallAuthenticated(service string, token AuthToken, body interface{}) (interface{}, error) {
 	buff := NewBuffer(1024)
 	cc := NewChannelCreate(CallChan, service, body)
+	cc.AuthToken = token
 	err := Encode(buff, cc)
 	if err != nil {
 		return nil, err
