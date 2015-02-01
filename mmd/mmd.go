@@ -40,7 +40,7 @@ func NewConfig(url string) *Config {
 		Url:     url,
 		ReadSz:  64 * 1024,
 		WriteSz: 64 * 1024,
-		AppName: fmt.Sprintf("Go:%s", os.Args[0]),
+		AppName: fmt.Sprintf("Go:%s", filepath.Base(os.Args[0])),
 	}
 }
 
@@ -171,52 +171,7 @@ func (c *Conn) RegisterService(name string, fn ServiceFunc) error {
 	return c.registerServiceUtil(name, fn, "register")
 }
 
-<<<<<<< HEAD
-func newConfig(url string) *config {
-	return &config{
-		url:     url,
-		readSz:  64 * 1024,
-		writeSz: 64 * 1024,
-		appName: fmt.Sprintf("Go:%s", filepath.Base(os.Args[0])),
-	}
-}
-
-func LocalConnect() (*MMDConn, error) {
-	return Connect(newConfig("localhost:9999"))
-}
-func ConnectTo(host string, port int) (*MMDConn, error) {
-	return Connect(newConfig(fmt.Sprintf("%s:%d", host, port)))
-}
-func Connect(cfg *config) (*MMDConn, error) {
-	addr, err := net.ResolveTCPAddr("tcp", cfg.url)
-	if err != nil {
-		return nil, err
-	}
-	// log.Printf("Connecting to: %s / %s\n", cfg.url, addr)
-	conn, err := net.DialTCP("tcp", nil, addr)
-	if err != nil {
-		return nil, err
-	}
-	conn.SetWriteBuffer(cfg.writeSz)
-	conn.SetReadBuffer(cfg.readSz)
-	mmdc := &MMDConn{socket: conn,
-		writeChan:   make(chan []byte),
-		dispatch:    make(map[ChannelId]chan ChannelMsg, 1024),
-		callTimeout: time.Second * 5,
-		services:    make(map[string]ServiceFunc),
-	}
-	go writer(mmdc)
-	go reader(mmdc)
-	handshake := []byte{1, 1}
-	handshake = append(handshake, cfg.appName...)
-	mmdc.WriteFrame(handshake)
-	return mmdc, nil
-}
-
-func (c *MMDConn) Subscribe(service string, body interface{}) (*MMDChan, error) {
-=======
 func (c *Conn) Subscribe(service string, body interface{}) (*Chan, error) {
->>>>>>> 578d0217bc7c81074708fede6bdfb98c645db5af
 	buff := NewBuffer(1024)
 	cc := NewChannelCreate(SubChan, service, body)
 	err := Encode(buff, cc)
