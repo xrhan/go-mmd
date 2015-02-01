@@ -8,6 +8,7 @@ import (
 	logpkg "log"
 	"net"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sync"
 	"time"
@@ -119,7 +120,7 @@ func newConfig(url string) *config {
 		url:     url,
 		readSz:  64 * 1024,
 		writeSz: 64 * 1024,
-		appName: fmt.Sprintf("Go:%s", os.Args[0]),
+		appName: fmt.Sprintf("Go:%s", filepath.Base(os.Args[0])),
 	}
 }
 
