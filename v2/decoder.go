@@ -9,22 +9,22 @@ import (
 const microsInSecond = 1000 * 1000
 
 // Decode decodes the next mmd message from a given buffer
-func Decode(buff *Buffer) (interface{}, error) {
-	tag, err := buff.ReadByte()
+func Decode(b []byte) (interface{}, error) {
+	tag, err := b[0]
 	if err != nil {
 		return nil, err
 	}
 	fn := decodeTable[tag]
 	if fn == nil {
-		return nil, fmt.Errorf("Unsupported type tag: %c:%daaa", tag, tag)
+		return nil, fmt.Errorf("Unsupported type tag: %c:%d", tag, tag)
 	}
-	return fn(tag, buff)
+	return fn(tag, b[1:])
 }
 
-var decodeTable []func(byte, *Buffer) (interface{}, error)
+var decodeTable []func(byte, []byte) (interface{}, []byte, error)
 
 func init() { // this init() is here due to compiler bug(?) on init loop
-	decodeTable = []func(byte, *Buffer) (interface{}, error){
+	decodeTable = []func(byte, []byte) (interface{}, []byte, error){
 		0x00: decodeFastInt,
 		0x01: decodeFastInt,
 		0x02: decodeFastInt,

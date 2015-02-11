@@ -1,137 +1,128 @@
 package mmd
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"math"
 )
 
-type Buffer struct {
-	bytes.Buffer
-	tmp [8]byte // avoid allocating on int int conversions
+func NewBuffer(sz int) []byte {
+	return make([]byte, 0, sz)
 }
 
-func NewBuffer(sz int) *Buffer {
-	return &Buffer{Buffer: *bytes.NewBuffer(make([]byte, 0, sz))}
-}
-
-func (b *Buffer) Clone() *Buffer {
-	var ret Buffer
-	ret = *b
-	return &ret
-}
-
-func (b *Buffer) HexDump() string {
-	l := b.Len()
+func hexDump(b []byte) string {
+	l := len(b)
 	if l > 200 {
 		l = 200
 	}
-	return hex.Dump(b.Bytes()[:l])
+	return hex.Dump(b[:l])
 }
 
-func (b *Buffer) Reset() {
-	fmt.Println("Calling my reset")
-	b.Buffer.Reset()
-}
-func (b *Buffer) RequireNext(n int) ([]byte, error) {
-	if b.Len() < n {
-		return nil, io.EOF
+func readString(n int, b []byte) (string, []byte, error) {
+	if len(b) < n {
+		return "", b, io.EOF
 	}
-	return b.Next(n), nil
+	return string(b[:n]), b[:n], nil
+}
+func readVarint(b []byte) (int, []byte, error) {
+	i, sz := binary.Varint(b)
+	return int(i), b[:sz], nil
+}
+func readVaruint(b []byte) (uint, []byte, error) {
+	u, sz := binary.Uvarint(b)
+	return uint(u), b[:sz], nil
 }
 
-func (b *Buffer) ReadString(n int) (string, error) {
-	r, e := b.RequireNext(n)
-	if e != nil {
-		return "", e
+func getWritable(sz int, b []byte) (start []byte, end []byte) {
+	l := len(b)
+	need := l + sz
+	if need < cap(b) {
+		end = b[:need]
+	} else {
+		end = make([]byte, need)
+		copy(end, b)
 	}
-	return string(r), nil
-}
-func (b *Buffer) ReadVarint() (int, error) {
-	i, err := binary.ReadVarint(b)
-	return int(i), err
-}
-func (b *Buffer) ReadVaruint() (uint, error) {
-	u, err := binary.ReadUvarint(b)
-	return uint(u), err
+	start = end[l:]
+	return
 }
 
 /*
 16 bit numbers
 */
-func (b *Buffer) ReadUInt16() (uint16, error) {
-	if b.Len() < 8 {
-		return 0, io.EOF
+func readUInt16(b []byte) (uint16, []byte, error) {
+	if len(b) < 2 {
+		return 0, b, io.EOF
 	}
-	return binary.BigEndian.Uint16(b.Next(2)), nil
+	return binary.BigEndian.Uint16(b), b[2:], nil
 }
-func (b *Buffer) ReadInt16() (int16, error) {
-	i, e := b.ReadUInt16()
-	return int16(i), e
+func readInt16(b []byte) (int16, []byte, error) {
+	i, b, e := readUInt16(b)
+	return int16(i), b, e
 }
-func (b *Buffer) WriteUInt16(i uint16) {
-	binary.BigEndian.PutUint16(b.tmp[:2], i)
-	b.Write(b.tmp[:2])
+func writeUInt16(i uint16, b []byte) []byte {
+	start, b := getWritable(2, b)
+	binary.BigEndian.PutUint16(start, i)
+	return b
 }
-func (b *Buffer) WriteInt16(i int16) {
-	b.WriteUInt16(uint16(i))
+func writeInt16(i int16, b []byte) []byte {
+	return writeUInt16(uint16(i), b)
 }
 
 /*
 32 bit numbers
 */
-func (b *Buffer) ReadUInt32() (uint32, error) {
+func readUInt32() (uint32, []byte, error) {
 	if b.Len() < 8 {
 		return 0, io.EOF
 	}
 	return binary.BigEndian.Uint32(b.Next(4)), nil
 }
-func (b *Buffer) ReadInt32() (int32, error) {
-	i, e := b.ReadUInt32()
-	return int32(i), e
+func readInt32() (int32, error) {
+	i, b, e := readUInt32(b)
+	return int32(i), b, e
 }
-func (b *Buffer) ReadFloat32() (float32, error) {
-	i, e := b.ReadUInt32()
+func readFloat32() (float32, error) {
+	i, b, e := b.ReadUInt32()
 	return math.Float32frombits(i), e
 }
-func (b *Buffer) WriteUInt32(i uint32) {
-	binary.BigEndian.PutUint32(b.tmp[:4], i)
-	b.Write(b.tmp[:4])
+func writeUInt32(i uint32) {
+	start, b := getWritable(4, b)
+	binary.BigEndian.PutUint32(start, i)
+	return b
 }
-func (b *Buffer) WriteInt32(i int32) {
-	b.WriteUInt32(uint32(i))
+func writeInt32(i int32, b []byte) {
+	b.WriteUInt32(uint32(i), b)
 }
-func (b *Buffer) WriteFloat32(f float32) {
-	b.WriteUInt32(math.Float32bits(f))
+func writeFloat32(f float32, b []byte) []byte {
+	return writeUInt32(math.Float32bits(f), b)
 }
 
 /*
 64 bit numbers
 */
-func (b *Buffer) ReadUInt64() (uint64, error) {
-	if b.Len() < 8 {
+func readUInt64() (uint64, []byte, error) {
+	if len(b) < 8 {
 		return 0, io.EOF
 	}
 	return binary.BigEndian.Uint64(b.Next(8)), nil
 }
-func (b *Buffer) ReadInt64() (int64, error) {
-	i, e := b.ReadUInt64()
-	return int64(i), e
+func readInt64() (int64, []byte, error) {
+	i, b, e := readUInt64(b)
+	return int64(i), b, e
 }
-func (b *Buffer) ReadFloat64() (float64, error) {
-	i, e := b.ReadUInt64()
-	return math.Float64frombits(i), e
+func readFloat64() (float64, []byte, error) {
+	i, b, e := b.ReadUInt64(b)
+	return math.Float64frombits(i), b, e
 }
-func (b *Buffer) WriteUInt64(i uint64) {
-	binary.BigEndian.PutUint64(b.tmp[:8], i)
-	b.Write(b.tmp[:8])
+func writeUInt64(i uint64, b []byte) []byte {
+	start, b := getWritable(8, b)
+	binary.BigEndian.PutUint64(start, i)
+	return b
 }
-func (b *Buffer) WriteInt64(i int64) {
-	b.WriteUInt64(uint64(i))
+func writeInt64(i int64, b []byte) []byte {
+	return writeUInt64(uint64(i), b)
 }
-func (b *Buffer) WriteFloat64(f float64) {
-	b.WriteUInt64(math.Float64bits(f))
+func writeFloat64(f float64, b []byte) []byte {
+	return writeUInt64(math.Float64bits(f), b)
 }

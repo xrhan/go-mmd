@@ -200,6 +200,8 @@ func reflectEncode(thing interface{}, buffer *Buffer) error {
 		return encodeInt(buffer, val.Int())
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		return encodeUint(buffer, val.Uint())
+	case reflect.String:
+		return Encode(buffer, val.String())
 	case reflect.Slice:
 		buffer.WriteByte('a')
 		buffer.WriteByte(0x04)
