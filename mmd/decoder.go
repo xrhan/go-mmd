@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"runtime"
 	"time"
 )
 
@@ -12,13 +13,15 @@ const microsInSecond = 1000 * 1000
 
 // Decode decodes the next mmd message from a given buffer
 func Decode(buff *Buffer) (interface{}, error) {
+	b := make([]byte, 20480)
+	b = b[:runtime.Stack(b, false)]
 	tag, err := buff.ReadByte()
 	if err != nil {
 		return nil, err
 	}
 	fn := decodeTable[tag]
 	if fn == nil {
-		return nil, fmt.Errorf("Unsupported type tag: %c:%daaa", tag, tag)
+		return nil, fmt.Errorf("Unsupported type tag: %c:%d", tag, tag)
 	}
 	return fn(tag, buff)
 }
@@ -199,12 +202,14 @@ func decodeDouble(tag byte, buff *Buffer) (ret interface{}, err error) {
 }
 func fastError(tag byte, buff *Buffer) (ret interface{}, err error) {
 	code, err := taggedFastInt(buff)
-	if err == nil {
-		if body, err := Decode(buff); err == nil {
-			ret = MMDError{code, body}
-		}
+	if err != nil {
+		return nil, err
 	}
-	return
+	body, err := Decode(buff)
+	if err != nil {
+		return nil, err
+	}
+	return MMDError{code, body}, nil
 }
 
 func varError(tag byte, buff *Buffer) (interface{}, error) {
@@ -415,11 +420,13 @@ func badTag(msg string, b byte) string {
 	return fmt.Sprintf("%s %c:%d", msg, b, b)
 }
 
-func fastString(tag byte, buff *Buffer) (ret interface{}, err error) {
-	if sz, err := taggedFastInt(buff); err == nil {
-		ret, err = buff.ReadString(sz)
+func fastString(tag byte, buff *Buffer) (interface{}, error) {
+	sz, err := taggedFastInt(buff)
+	if err != nil {
+		return nil, err
 	}
-	return
+	s, e := buff.ReadString(sz)
+	return s, e
 }
 
 func decodeClose(tag byte, buff *Buffer) (interface{}, error) {

@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 )
@@ -129,8 +130,9 @@ func encodeUint(buffer *Buffer, i uint64) error {
 }
 
 type fieldInfo struct {
-	key string
-	num int
+	key       string
+	num       int
+	omitEmpty bool
 }
 type structInfo struct {
 	size   int
@@ -153,8 +155,27 @@ func getStructInfo(st reflect.Type) *structInfo {
 		if f.PkgPath != "" {
 			continue
 		}
+
 		si.size++
-		si.fields = append(si.fields, fieldInfo{f.Name, i})
+		fi := fieldInfo{key: f.Name, num: i}
+		n := f.Tag.Get("mmd")
+		if n == "" {
+			n = f.Tag.Get("json")
+		}
+		if n != "" {
+			parts := strings.Split(n, ",")
+			if parts[0] != "" {
+				fi.key = parts[0]
+			}
+			if len(parts) > 1 {
+				for _, p := range parts[1:] {
+					if p == "omitempty" {
+						fi.omitEmpty = true
+					}
+				}
+			}
+		}
+		si.fields = append(si.fields, fi)
 	}
 	structMapLock.Lock()
 	structMap[st] = &si
@@ -162,6 +183,43 @@ func getStructInfo(st reflect.Type) *structInfo {
 	return &si
 }
 
+type zeroChecker interface {
+	IsZero() bool
+}
+
+func fieldByIndex(src reflect.Value, idx int) reflect.Value {
+	if src.Kind() == reflect.Ptr {
+		if src.IsNil() {
+			return reflect.Value{}
+		}
+		src = src.Elem()
+	}
+	return src.Field(idx)
+}
+func isEmptyValue(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
+		return v.Len() == 0
+	case reflect.Bool:
+		return !v.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int() == 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return v.Uint() == 0
+	case reflect.Float32, reflect.Float64:
+		return v.Float() == 0
+	case reflect.Interface, reflect.Ptr:
+		return v.IsNil()
+	case reflect.Struct:
+		t, ok := v.Interface().(zeroChecker)
+		if ok {
+			return t.IsZero()
+		} else {
+			panic(fmt.Sprintf("don't know how to check empty struct: %v", v))
+		}
+	}
+	return false
+}
 func reflectEncode(thing interface{}, buffer *Buffer) error {
 	tm, ok := thing.(encoding.TextMarshaler)
 	if ok {
@@ -179,21 +237,33 @@ func reflectEncode(thing interface{}, buffer *Buffer) error {
 	kind := val.Kind()
 	switch kind {
 	case reflect.Struct:
+		start := buffer.GetPos()
 		buffer.WriteByte('r')
 		buffer.WriteByte(0x04)
 		si := getStructInfo(val.Type())
-
-		buffer.order.PutUint32(buffer.GetWritable(4), uint32(si.size))
+		sz := buffer.GetWritable(4)
+		count := 0
 		for _, f := range si.fields {
+			fv := fieldByIndex(val, f.num)
+			if !fv.IsValid() || (f.omitEmpty && isEmptyValue(fv)) {
+				continue
+			}
+			count++
 			err := Encode(buffer, f.key)
 			if err != nil {
 				return err
 			}
-			err = Encode(buffer, val.Field(f.num).Interface())
+			err = Encode(buffer, fv.Interface())
 			if err != nil {
 				return err
 			}
 
+		}
+		if count > 0 {
+			buffer.order.PutUint32(sz, uint32(count))
+		} else {
+			buffer.Position(start)
+			buffer.WriteByte('N')
 		}
 		return nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:

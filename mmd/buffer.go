@@ -2,6 +2,7 @@ package mmd
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"math"
 )
@@ -41,6 +42,10 @@ func (b *Buffer) Bytes() []byte {
 	return b.data
 }
 
+func (b *Buffer) BytesRemaining() []byte {
+	return b.Bytes()[b.index:]
+}
+
 func (buff *Buffer) WriteByte(b byte) error {
 	buff.ensureSpace(1)
 	buff.data[buff.index] = b
@@ -78,7 +83,9 @@ func (b *Buffer) WriteString(str string) {
 func (b *Buffer) Position(idx int) {
 	b.index = idx
 }
-
+func (b *Buffer) GetPos() int {
+	return b.index
+}
 func (b *Buffer) ReadString(sz int) (string, error) {
 	bytes, err := b.Next(sz)
 	if err != nil {
@@ -94,20 +101,26 @@ func (b *Buffer) String() string {
 	return fmt.Sprintf("Buffer{index: %d, len: %d, cap: %d, order: %v}", b.index, len(b.data), cap(b.data), b.order)
 }
 
+func (b *Buffer) DumpRemaining() string {
+	return hex.Dump(b.BytesRemaining())
+}
+
 func (b *Buffer) Next(n int) ([]byte, error) {
 	if b.index+n > len(b.data) {
 		return nil, fmt.Errorf("Can't read %d bytes from %s", n, b)
 	}
 	ret := make([]byte, n)
-	copy(ret, b.data[b.advance(n):b.index])
+	start := b.index
+	b.index += n
+	copy(ret, b.data[start:b.index])
 	return ret, nil
 }
 
-func (b *Buffer) advance(sz int) (ret int) {
+func (b *Buffer) advance(sz int) int {
 	b.ensureSpace(sz)
-	ret = b.index
+	ret := b.index
 	b.index += sz
-	return
+	return ret
 }
 
 func (b *Buffer) ensureSpace(sz int) {
@@ -115,7 +128,7 @@ func (b *Buffer) ensureSpace(sz int) {
 	if cap(b.data) > need {
 		return
 	}
-	copy(b.data, make([]byte, cap(b.data)+sz))
+	copy(make([]byte, cap(b.data)+sz), b.data)
 }
 
 func (b *Buffer) ReadVaruint() (uint, error) {

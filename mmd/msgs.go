@@ -19,6 +19,11 @@ func NewChannelCreate(chanType ChannelType, service string, body interface{}) Ch
 		Body:      body,
 	}
 }
+
+func GenerateUUID() UUID {
+	return newUUID()
+}
+
 func newUUID() UUID {
 	b := make([]byte, 16)
 	_, err := rand.Read(b)
