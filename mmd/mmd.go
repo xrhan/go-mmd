@@ -130,9 +130,15 @@ func (c *Chan) Send(body interface{}) error {
 	c.con.Send(buff.Flip())
 	return nil
 }
+
+func (c *Chan) Errorf(code int, format string, args ...interface{}) error {
+	return c.Error(code, fmt.Sprintf(format, args...))
+}
+
 func (c *Chan) Error(code int, body interface{}) error {
 	return c.Close(&MMDError{code, body})
 }
+
 func (c *Chan) ErrorInvalidRequest(body interface{}) error {
 	return c.Error(Err_INVALID_REQUEST, body)
 }
