@@ -130,6 +130,12 @@ func (c *Chan) Send(body interface{}) error {
 	c.con.Send(buff.Flip())
 	return nil
 }
+func (c *Chan) Error(code int, body interface{}) error {
+	return c.Close(&MMDError{code, body})
+}
+func (c *Chan) ErrorInvalidRequest(body interface{}) error {
+	return c.Error(Err_INVALID_REQUEST, body)
+}
 
 // Call Calls a service
 func Call(service string, body interface{}) (interface{}, error) {

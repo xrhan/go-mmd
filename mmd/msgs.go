@@ -83,3 +83,18 @@ type ChannelMsg struct {
 	Channel ChannelId
 	Body    interface{}
 }
+
+const (
+	Err_UNKNOWN                         = 0
+	Err_SERVICE_NOT_FOUND               = 1
+	Err_IMPROPER_RESPONSE_TYPE          = 2
+	Err_BROKER_CONNECTION_CLOSED        = 3
+	Err_SERVICE_ERROR                   = 4
+	Err_UNEXPECTED_REMOTE_CHANNEL_CLOSE = 5
+	Err_INVALID_REQUEST                 = 6
+	Err_AUTHENTICATION_ERROR            = 7
+	Err_CHANNEL_ADMIN_CLOSED            = 8
+	Err_INVALID_CHANNEL                 = 9
+	Err_TIMEOUT                         = 10
+	Err_SERVICE_BUSY                    = 11
+)
