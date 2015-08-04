@@ -30,7 +30,7 @@ var allTypes = []interface{}{
 	float64(-1.0),
 	math.MaxFloat64,
 	[]int{1, 2, 3},
-	map[string]interface{}{"ABC": 1, "def": []byte{9, 8, 7}},
+	map[string]interface{}{"ABC": []byte{9, 8, 7}},
 	time.Now().Round(time.Microsecond),
 }
 

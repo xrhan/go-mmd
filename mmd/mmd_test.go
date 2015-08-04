@@ -1,13 +1,23 @@
+// +build integration
 package mmd
 
 import (
+	"os"
+	"strconv"
 	"testing"
 )
 
+var integrationTests = false
+
+func init() {
+	integrationTests, _ = strconv.ParseBool(os.Getenv("INTEGRATION"))
+}
+
 func TestEchoCall(t *testing.T) {
-	if testing.Short() {
-		t.Skip("network tests disabled")
+	if !integrationTests {
+		t.Skip("integration tests disabled")
 	}
+
 	mmdc, err := LocalConnect()
 	if err != nil {
 		t.Fatal(err)
