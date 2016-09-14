@@ -97,13 +97,13 @@ type Conn struct {
 
 // Chan MMD Channel
 type Chan struct {
-	ch  chan ChannelMsg
+	Ch  chan ChannelMsg
 	con *Conn
 	Id  ChannelId
 }
 
 func (c *Chan) NextMessage() (ChannelMsg, error) {
-	a, ok := <-c.ch
+	a, ok := <-c.Ch
 	if !ok {
 		return ChannelMsg{}, EOC
 	}
@@ -193,7 +193,7 @@ func (c *Conn) Subscribe(service string, body interface{}) (*Chan, error) {
 	ch := make(chan ChannelMsg, 1)
 	c.registerChannel(cc.ChannelId, ch)
 	c.Send(buff.Flip())
-	return &Chan{ch: ch, con: c, Id: cc.ChannelId}, nil
+	return &Chan{Ch: ch, con: c, Id: cc.ChannelId}, nil
 }
 
 func (c *Conn) Call(service string, body interface{}) (interface{}, error) {
@@ -328,7 +328,7 @@ func reader(c *Conn) {
 				}
 				ch := make(chan ChannelMsg, 1)
 				c.registerChannel(msg.ChannelId, ch)
-				fn(c, &Chan{ch: ch, con: c, Id: msg.ChannelId}, &msg)
+				fn(c, &Chan{Ch: ch, con: c, Id: msg.ChannelId}, &msg)
 			default:
 				log.Panic("Unknown message type:", reflect.TypeOf(msg), msg)
 			}
