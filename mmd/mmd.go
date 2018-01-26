@@ -74,7 +74,7 @@ func _create_connection(cfg *Config) (*Conn, error) {
 	mmdc := &Conn{socket: conn,
 		writeChan:   make(chan []byte),
 		dispatch:    make(map[ChannelId]chan ChannelMsg, 1024),
-		callTimeout: time.Second * 5,
+		callTimeout: time.Second * 30,
 		services:    make(map[string]ServiceFunc),
 	}
 	go writer(mmdc)
