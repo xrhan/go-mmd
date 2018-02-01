@@ -13,10 +13,12 @@ import (
 	"reflect"
 	"sync"
 	"time"
+	"net/url"
 )
 
 var log = logpkg.New(os.Stdout, "[mmd] ", logpkg.LstdFlags|logpkg.Lmicroseconds)
 var mmdUrl = "localhost:9999"
+var autoRetrySeconds = 1;
 
 func init() {
 	flag.StringVar(&mmdUrl, "mmd", mmdUrl, "Sets default MMD Url")
@@ -33,14 +35,16 @@ type Config struct {
 	ReadSz  int
 	WriteSz int
 	AppName string
+	AutoRetry bool
 }
 
-func NewConfig(url string) *Config {
+func NewConfig(url string, autoRetry bool) *Config {
 	return &Config{
-		Url:     url,
-		ReadSz:  64 * 1024,
-		WriteSz: 64 * 1024,
-		AppName: fmt.Sprintf("Go:%s", filepath.Base(os.Args[0])),
+		Url:     	url,
+		ReadSz:  	64 * 1024,
+		WriteSz: 	64 * 1024,
+		AppName: 	fmt.Sprintf("Go:%s", filepath.Base(os.Args[0])),
+		AutoRetry: 	autoRetry,
 	}
 }
 
@@ -56,7 +60,11 @@ func LocalConnect() (*Conn, error) {
 	return ConnectTo("localhost:9999")
 }
 func ConnectTo(url string) (*Conn, error) {
-	return NewConfig(url).Connect()
+	return NewConfig(url, false).Connect()
+}
+
+func ConnectWithRetry(url string) (*Conn, error) {
+	return NewConfig(url, true).Connect()
 }
 
 func _create_connection(cfg *Config) (*Conn, error) {
@@ -76,6 +84,7 @@ func _create_connection(cfg *Config) (*Conn, error) {
 		dispatch:    make(map[ChannelId]chan ChannelMsg, 1024),
 		callTimeout: time.Second * 30,
 		services:    make(map[string]ServiceFunc),
+		config:      cfg,
 	}
 	go writer(mmdc)
 	go reader(mmdc)
@@ -83,6 +92,30 @@ func _create_connection(cfg *Config) (*Conn, error) {
 	handshake = append(handshake, cfg.AppName...)
 	mmdc.WriteFrame(handshake)
 	return mmdc, nil
+}
+
+func (c *Conn) resetSocket() {
+	if c.socket != nil {
+		err := c.socket.Close()
+		if err != nil {
+			log.Panic("Err closing socket: ", err)
+		}
+	}
+
+	addr, err := net.ResolveTCPAddr("tcp", c.config.Url)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := net.DialTCP("tcp", nil, addr)
+	if err != nil {
+		return nil, err
+	}
+	conn.SetWriteBuffer(c.config.WriteSz)
+	conn.SetReadBuffer(c.config.ReadSz)
+
+	c.socket = conn
+	log.Println("Socket reset")
 }
 
 // Conn Connection and channel dispatch map
@@ -93,6 +126,7 @@ type Conn struct {
 	dlock       sync.RWMutex
 	callTimeout time.Duration
 	services    map[string]ServiceFunc
+	config 	    *Config
 }
 
 // Chan MMD Channel
@@ -256,6 +290,12 @@ func (c *Conn) Close() {
 	close(c.writeChan)
 }
 
+func onDisconnect(c *Conn) {
+	cleanupReader(c)
+	cleanupWriter(c)
+	reconnect(c)
+}
+
 func cleanupReader(c *Conn) {
 	log.Println("Cleaning up reader")
 	c.socket.CloseRead()
@@ -266,10 +306,29 @@ func cleanupReader(c *Conn) {
 	}
 }
 
+func cleanupWriter(c *Conn) {
+	c.Close()
+	c.socket.CloseWrite();
+}
+
+func reconnect(c * Conn) {
+	println("Trying to reconnect in 1s")
+	time.Sleep(autoRetrySeconds * time.Second)
+
+	c.resetSocket()
+
+	go writer(c)
+	go reader(c)
+	handshake := []byte{1, 1}
+	handshake = append(handshake, c.config.AppName...)
+
+	c.WriteFrame(handshake)
+}
+
 func reader(c *Conn) {
 	fszb := make([]byte, 4)
 	buff := make([]byte, 256)
-	defer cleanupReader(c)
+	defer onDisconnect(c)
 	for {
 		num, err := c.socket.Read(fszb)
 		if err != nil {
