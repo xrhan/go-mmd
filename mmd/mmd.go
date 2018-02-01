@@ -13,7 +13,6 @@ import (
 	"reflect"
 	"sync"
 	"time"
-	"net/url"
 )
 
 var log = logpkg.New(os.Stdout, "[mmd] ", logpkg.LstdFlags|logpkg.Lmicroseconds)
