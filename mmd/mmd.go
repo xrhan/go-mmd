@@ -103,12 +103,12 @@ func (c *Conn) resetSocket() {
 
 	addr, err := net.ResolveTCPAddr("tcp", c.config.Url)
 	if err != nil {
-		return nil, err
+		log.Panic("Could not resolve TCP address: ", err)
 	}
 
 	conn, err := net.DialTCP("tcp", nil, addr)
 	if err != nil {
-		return nil, err
+		log.Panic("Could not connect: ", err)
 	}
 	conn.SetWriteBuffer(c.config.WriteSz)
 	conn.SetReadBuffer(c.config.ReadSz)
@@ -312,7 +312,7 @@ func cleanupWriter(c *Conn) {
 
 func reconnect(c * Conn) {
 	println("Trying to reconnect in 1s")
-	time.Sleep(autoRetrySeconds * time.Second)
+	time.Sleep(1 * time.Second)
 
 	c.resetSocket()
 
