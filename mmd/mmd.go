@@ -18,6 +18,8 @@ import (
 var log = logpkg.New(os.Stdout, "[mmd] ", logpkg.LstdFlags|logpkg.Lmicroseconds)
 var mmdUrl = "localhost:9999"
 
+const defaultTimeout = time.Second * 30
+
 func init() {
 	flag.StringVar(&mmdUrl, "mmd", mmdUrl, "Sets default MMD Url")
 }
@@ -29,18 +31,22 @@ var EOC = errors.New("End Of Channel")
 type ServiceFunc func(*Conn, *Chan, *ChannelCreate)
 
 type Config struct {
-	Url     string
-	ReadSz  int
-	WriteSz int
-	AppName string
+	Url       string
+	ReadSz    int
+	WriteSz   int
+	AppName   string
+	AutoRetry bool
+	Timeout   time.Duration
 }
 
 func NewConfig(url string) *Config {
 	return &Config{
-		Url:     url,
-		ReadSz:  64 * 1024,
-		WriteSz: 64 * 1024,
-		AppName: fmt.Sprintf("Go:%s", filepath.Base(os.Args[0])),
+		Url:       url,
+		ReadSz:    64 * 1024,
+		WriteSz:   64 * 1024,
+		AppName:   fmt.Sprintf("Go:%s", filepath.Base(os.Args[0])),
+		AutoRetry: false,
+		Timeout:   defaultTimeout,
 	}
 }
 
@@ -59,13 +65,20 @@ func ConnectTo(url string) (*Conn, error) {
 	return NewConfig(url).Connect()
 }
 
+func ConnectWithRetry(url string, timeout time.Duration) (*Conn, error) {
+	cfg := NewConfig(url)
+	cfg.Timeout = timeout
+	cfg.AutoRetry = true
+	return cfg.Connect()
+}
+
 func _create_connection(cfg *Config) (*Conn, error) {
 	addr, err := net.ResolveTCPAddr("tcp", cfg.Url)
 	if err != nil {
 		return nil, err
 	}
 	// log.Printf("Connecting to: %s / %s\n", cfg.url, addr)
-	conn, err := net.DialTCP("tcp", nil, addr)
+	conn, err := createSocketConnection(addr, cfg.AutoRetry, cfg.Timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +89,7 @@ func _create_connection(cfg *Config) (*Conn, error) {
 		dispatch:    make(map[ChannelId]chan ChannelMsg, 1024),
 		callTimeout: time.Second * 30,
 		services:    make(map[string]ServiceFunc),
+		config:      cfg,
 	}
 	go writer(mmdc)
 	go reader(mmdc)
@@ -83,6 +97,51 @@ func _create_connection(cfg *Config) (*Conn, error) {
 	handshake = append(handshake, cfg.AppName...)
 	mmdc.WriteFrame(handshake)
 	return mmdc, nil
+}
+
+func createSocketConnection(addr *net.TCPAddr, autoRetry bool, timeout time.Duration) (*net.TCPConn, error) {
+	start := time.Now()
+	for {
+		conn, err := net.DialTCP("tcp", nil, addr)
+		if err != nil && autoRetry && time.Since(start) < timeout {
+			time.Sleep(5 * time.Second)
+			log.Println("Disconnected. Retrying again")
+			continue
+		}
+
+		return conn, err
+	}
+}
+
+func (c *Conn) resetSocket() error {
+	if c.socket != nil {
+		err := c.socket.Close()
+		if err != nil {
+			log.Panic("Err closing socket: ", err)
+		}
+	}
+
+	addr, err := net.ResolveTCPAddr("tcp", c.config.Url)
+	if err != nil {
+		log.Panic("Could not resolve TCP address: ", err)
+	}
+
+	conn, err := createSocketConnection(addr, c.config.AutoRetry, c.config.Timeout)
+
+	if err != nil {
+		return err
+	}
+
+	conn.SetWriteBuffer(c.config.WriteSz)
+	conn.SetReadBuffer(c.config.ReadSz)
+
+	c.socket = conn
+	log.Println("Socket reset")
+
+	//Create a new write channel
+	c.writeChan = make(chan []byte)
+
+	return nil
 }
 
 // Conn Connection and channel dispatch map
@@ -93,6 +152,7 @@ type Conn struct {
 	dlock       sync.RWMutex
 	callTimeout time.Duration
 	services    map[string]ServiceFunc
+	config      *Config
 }
 
 // Chan MMD Channel
@@ -256,7 +316,15 @@ func (c *Conn) Close() {
 	close(c.writeChan)
 }
 
-func cleanupReader(c *Conn) {
+func (c *Conn) onDisconnect() {
+	c.cleanupReader()
+	c.cleanupWriter()
+	if c.config.AutoRetry {
+		c.reconnect()
+	}
+}
+
+func (c *Conn) cleanupReader() {
 	log.Println("Cleaning up reader")
 	c.socket.CloseRead()
 	c.dlock.Lock()
@@ -266,10 +334,34 @@ func cleanupReader(c *Conn) {
 	}
 }
 
+func (c *Conn) cleanupWriter() {
+	c.Close()
+	c.socket.CloseWrite()
+}
+
+func (c *Conn) reconnect() {
+	err := c.resetSocket()
+
+	if err != nil {
+		log.Panicln("Failed to reconnect: ", err)
+		return
+	}
+
+	log.Println("Reconnected")
+	c.dlock.Unlock()
+	go writer(c)
+	go reader(c)
+	handshake := []byte{1, 1}
+	handshake = append(handshake, c.config.AppName...)
+
+	c.WriteFrame(handshake)
+	return
+}
+
 func reader(c *Conn) {
 	fszb := make([]byte, 4)
 	buff := make([]byte, 256)
-	defer cleanupReader(c)
+	defer c.onDisconnect()
 	for {
 		num, err := c.socket.Read(fszb)
 		if err != nil {
