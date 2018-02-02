@@ -17,7 +17,7 @@ import (
 
 var log = logpkg.New(os.Stdout, "[mmd] ", logpkg.LstdFlags|logpkg.Lmicroseconds)
 var mmdUrl = "localhost:9999"
-var autoRetrySeconds = 1;
+var maxRetryAttempts = 3;
 
 func init() {
 	flag.StringVar(&mmdUrl, "mmd", mmdUrl, "Sets default MMD Url")
@@ -72,7 +72,7 @@ func _create_connection(cfg *Config) (*Conn, error) {
 		return nil, err
 	}
 	// log.Printf("Connecting to: %s / %s\n", cfg.url, addr)
-	conn, err := net.DialTCP("tcp", nil, addr)
+	conn, err := createSocketConnection(addr, cfg.AutoRetry)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,21 @@ func _create_connection(cfg *Config) (*Conn, error) {
 	return mmdc, nil
 }
 
-func (c *Conn) resetSocket() {
+func createSocketConnection(addr *net.TCPAddr, autoRetry bool) (*net.TCPConn, error){
+	for {
+		conn, err := net.DialTCP("tcp", nil, addr)
+		if err != nil && autoRetry {
+			time.Sleep(5 * time.Second)
+			log.Println("Disconnected. Retrying again")
+			continue
+		}
+
+		return conn, err
+	}
+}
+
+
+func (c *Conn) resetSocket() (bool, error){
 	if c.socket != nil {
 		err := c.socket.Close()
 		if err != nil {
@@ -106,15 +120,22 @@ func (c *Conn) resetSocket() {
 		log.Panic("Could not resolve TCP address: ", err)
 	}
 
-	conn, err := net.DialTCP("tcp", nil, addr)
+	conn, err := createSocketConnection(addr, c.config.AutoRetry)
+
 	if err != nil {
-		log.Panic("Could not connect: ", err)
+		return false, err
 	}
+
 	conn.SetWriteBuffer(c.config.WriteSz)
 	conn.SetReadBuffer(c.config.ReadSz)
 
 	c.socket = conn
 	log.Println("Socket reset")
+
+	//Create a new write channel
+	c.writeChan = make(chan []byte)
+
+	return true, nil
 }
 
 // Conn Connection and channel dispatch map
@@ -292,7 +313,9 @@ func (c *Conn) Close() {
 func onDisconnect(c *Conn) {
 	cleanupReader(c)
 	cleanupWriter(c)
-	reconnect(c)
+	if c.config.AutoRetry {
+		reconnect(c)
+	}
 }
 
 func cleanupReader(c *Conn) {
@@ -311,17 +334,21 @@ func cleanupWriter(c *Conn) {
 }
 
 func reconnect(c * Conn) {
-	println("Trying to reconnect in 1s")
-	time.Sleep(1 * time.Second)
+	connected, err := c.resetSocket()
 
-	c.resetSocket()
+	if connected {
+		log.Println("Reconnected")
+		c.dlock.Unlock()
+		go writer(c)
+		go reader(c)
+		handshake := []byte{1, 1}
+		handshake = append(handshake, c.config.AppName...)
 
-	go writer(c)
-	go reader(c)
-	handshake := []byte{1, 1}
-	handshake = append(handshake, c.config.AppName...)
+		c.WriteFrame(handshake)
+		return
+	}
 
-	c.WriteFrame(handshake)
+	log.Panicln("Failed to reconnect: ", err)
 }
 
 func reader(c *Conn) {
