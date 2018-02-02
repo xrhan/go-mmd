@@ -17,7 +17,7 @@ import (
 
 var log = logpkg.New(os.Stdout, "[mmd] ", logpkg.LstdFlags|logpkg.Lmicroseconds)
 var mmdUrl = "localhost:9999"
-var maxRetryAttempts = 3;
+var timeoutSeconds = 30;
 
 func init() {
 	flag.StringVar(&mmdUrl, "mmd", mmdUrl, "Sets default MMD Url")
@@ -35,15 +35,17 @@ type Config struct {
 	WriteSz int
 	AppName string
 	AutoRetry bool
+	TimeoutSeconds int
 }
 
-func NewConfig(url string, autoRetry bool) *Config {
+func NewConfig(url string, autoRetry bool, timeoutSeconds int) *Config {
 	return &Config{
 		Url:     	url,
 		ReadSz:  	64 * 1024,
 		WriteSz: 	64 * 1024,
 		AppName: 	fmt.Sprintf("Go:%s", filepath.Base(os.Args[0])),
 		AutoRetry: 	autoRetry,
+		TimeoutSeconds: timeoutSeconds,
 	}
 }
 
@@ -59,11 +61,11 @@ func LocalConnect() (*Conn, error) {
 	return ConnectTo("localhost:9999")
 }
 func ConnectTo(url string) (*Conn, error) {
-	return NewConfig(url, false).Connect()
+	return NewConfig(url, false, timeoutSeconds).Connect()
 }
 
-func ConnectWithRetry(url string) (*Conn, error) {
-	return NewConfig(url, true).Connect()
+func ConnectWithRetry(url string, timeoutSeconds int) (*Conn, error) {
+	return NewConfig(url, true, timeoutSeconds).Connect()
 }
 
 func _create_connection(cfg *Config) (*Conn, error) {
@@ -72,7 +74,7 @@ func _create_connection(cfg *Config) (*Conn, error) {
 		return nil, err
 	}
 	// log.Printf("Connecting to: %s / %s\n", cfg.url, addr)
-	conn, err := createSocketConnection(addr, cfg.AutoRetry)
+	conn, err := createSocketConnection(addr, cfg.AutoRetry, cfg.TimeoutSeconds)
 	if err != nil {
 		return nil, err
 	}
@@ -93,10 +95,11 @@ func _create_connection(cfg *Config) (*Conn, error) {
 	return mmdc, nil
 }
 
-func createSocketConnection(addr *net.TCPAddr, autoRetry bool) (*net.TCPConn, error){
+func createSocketConnection(addr *net.TCPAddr, autoRetry bool, timeoutSeconds int) (*net.TCPConn, error){
+	start := time.Now();
 	for {
 		conn, err := net.DialTCP("tcp", nil, addr)
-		if err != nil && autoRetry {
+		if err != nil && autoRetry && time.Since(start).Seconds() <= float64(timeoutSeconds) {
 			time.Sleep(5 * time.Second)
 			log.Println("Disconnected. Retrying again")
 			continue
@@ -120,7 +123,7 @@ func (c *Conn) resetSocket() (bool, error){
 		log.Panic("Could not resolve TCP address: ", err)
 	}
 
-	conn, err := createSocketConnection(addr, c.config.AutoRetry)
+	conn, err := createSocketConnection(addr, c.config.AutoRetry, c.config.TimeoutSeconds)
 
 	if err != nil {
 		return false, err
