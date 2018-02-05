@@ -73,17 +73,12 @@ func ConnectWithRetry(url string, timeout time.Duration) (*Conn, error) {
 }
 
 func _create_connection(cfg *Config) (*Conn, error) {
-	addr, err := net.ResolveTCPAddr("tcp", cfg.Url)
-	if err != nil {
-		return nil, err
-	}
 	// log.Printf("Connecting to: %s / %s\n", cfg.url, addr)
-	conn, err := createSocketConnection(addr, cfg.AutoRetry, cfg.Timeout)
+	conn, err := createSocketConnection(cfg)
 	if err != nil {
 		return nil, err
 	}
-	conn.SetWriteBuffer(cfg.WriteSz)
-	conn.SetReadBuffer(cfg.ReadSz)
+
 	mmdc := &Conn{socket: conn,
 		writeChan:   make(chan []byte),
 		dispatch:    make(map[ChannelId]chan ChannelMsg, 1024),
@@ -91,57 +86,61 @@ func _create_connection(cfg *Config) (*Conn, error) {
 		services:    make(map[string]ServiceFunc),
 		config:      cfg,
 	}
-	go writer(mmdc)
-	go reader(mmdc)
-	handshake := []byte{1, 1}
-	handshake = append(handshake, cfg.AppName...)
-	mmdc.WriteFrame(handshake)
+
+	mmdc.startWriter()
+	mmdc.startReader()
+
+	mmdc.handshake()
 	return mmdc, nil
 }
 
-func createSocketConnection(addr *net.TCPAddr, autoRetry bool, timeout time.Duration) (*net.TCPConn, error) {
+func (c *Conn) reconnect() {
+	err := c.closeSocket()
+	if err != nil {
+		log.Panicln("Failed to close socket: ", err)
+	}
+
+	conn, err := createSocketConnection(c.config)
+	if err != nil {
+		log.Panicln("Failed to reconnect: ", err)
+	}
+
+	log.Println("Socket reset")
+	c.socket = conn
+
+	//Create a new write channel
+	c.writeChan = make(chan []byte)
+
+	log.Println("Reconnected")
+	c.dlock.Unlock()
+
+	c.startWriter()
+	c.startReader()
+	c.handshake()
+}
+
+func createSocketConnection(cfg *Config) (*net.TCPConn, error) {
+	addr, err := net.ResolveTCPAddr("tcp", cfg.Url)
+	if err != nil {
+		return nil, err
+	}
+
 	start := time.Now()
 	for {
 		conn, err := net.DialTCP("tcp", nil, addr)
-		if err != nil && autoRetry && time.Since(start) < timeout {
+		if err != nil && cfg.AutoRetry && time.Since(start) < cfg.Timeout {
 			time.Sleep(5 * time.Second)
 			log.Println("Disconnected. Retrying again")
 			continue
 		}
 
+		if err == nil {
+			conn.SetWriteBuffer(cfg.WriteSz)
+			conn.SetReadBuffer(cfg.ReadSz)
+		}
+
 		return conn, err
 	}
-}
-
-func (c *Conn) resetSocket() error {
-	if c.socket != nil {
-		err := c.socket.Close()
-		if err != nil {
-			log.Panic("Err closing socket: ", err)
-		}
-	}
-
-	addr, err := net.ResolveTCPAddr("tcp", c.config.Url)
-	if err != nil {
-		log.Panic("Could not resolve TCP address: ", err)
-	}
-
-	conn, err := createSocketConnection(addr, c.config.AutoRetry, c.config.Timeout)
-
-	if err != nil {
-		return err
-	}
-
-	conn.SetWriteBuffer(c.config.WriteSz)
-	conn.SetReadBuffer(c.config.ReadSz)
-
-	c.socket = conn
-	log.Println("Socket reset")
-
-	//Create a new write channel
-	c.writeChan = make(chan []byte)
-
-	return nil
 }
 
 // Conn Connection and channel dispatch map
@@ -339,23 +338,33 @@ func (c *Conn) cleanupWriter() {
 	c.socket.CloseWrite()
 }
 
-func (c *Conn) reconnect() {
-	err := c.resetSocket()
-
-	if err != nil {
-		log.Panicln("Failed to reconnect: ", err)
-		return
-	}
-
-	log.Println("Reconnected")
-	c.dlock.Unlock()
-	go writer(c)
-	go reader(c)
+func (c *Conn) handshake() {
 	handshake := []byte{1, 1}
 	handshake = append(handshake, c.config.AppName...)
 
 	c.WriteFrame(handshake)
-	return
+}
+
+func (c *Conn) WriteFrame(data []byte) {
+	c.writeChan <- data
+}
+
+func (c *Conn) startReader() {
+	go reader(c)
+}
+
+func (c *Conn) startWriter() {
+	go writer(c)
+}
+
+func (c *Conn) closeSocket() error {
+	if c.socket != nil {
+		err := c.socket.Close()
+		return err
+	}
+
+	log.Println("Cannot close a nil socket")
+	return nil
 }
 
 func reader(c *Conn) {
@@ -450,8 +459,4 @@ func writer(c *Conn) {
 			}
 		}
 	}
-}
-
-func (c *Conn) WriteFrame(data []byte) {
-	c.writeChan <- data
 }
