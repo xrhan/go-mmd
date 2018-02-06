@@ -30,7 +30,7 @@ var EOC = errors.New("End Of Channel")
 // ServiceFunc Handler callback for registered services
 type ServiceFunc func(*Conn, *Chan, *ChannelCreate)
 
-type OnConnection func(*Conn) (error)
+type OnConnection func(*Conn) error
 
 type Config struct {
 	Url       string
@@ -105,7 +105,7 @@ func (c *Conn) reconnect() {
 	log.Println("Socket reset. Reconnected to mmd")
 }
 
-func (c *Conn) createSocketConnection() (error) {
+func (c *Conn) createSocketConnection() error {
 	addr, err := net.ResolveTCPAddr("tcp", c.config.Url)
 	if err != nil {
 		return err
@@ -131,7 +131,7 @@ func (c *Conn) createSocketConnection() (error) {
 	}
 }
 
-func (c *Conn) onSocketConnection() (error) {
+func (c *Conn) onSocketConnection() error {
 	c.writeChan = make(chan []byte)
 	c.startWriter()
 	c.startReader()
@@ -143,7 +143,6 @@ func (c *Conn) onSocketConnection() (error) {
 
 	return nil
 }
-
 
 // Conn Connection and channel dispatch map
 type Conn struct {
