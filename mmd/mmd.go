@@ -30,6 +30,8 @@ var EOC = errors.New("End Of Channel")
 // ServiceFunc Handler callback for registered services
 type ServiceFunc func(*Conn, *Chan, *ChannelCreate)
 
+type OnConnection func(*Conn) (error)
+
 type Config struct {
 	Url       string
 	ReadSz    int
@@ -37,6 +39,7 @@ type Config struct {
 	AppName   string
 	AutoRetry bool
 	Timeout   time.Duration
+	OnConnect OnConnection
 }
 
 func NewConfig(url string) *Config {
@@ -65,33 +68,28 @@ func ConnectTo(url string) (*Conn, error) {
 	return NewConfig(url).Connect()
 }
 
-func ConnectWithRetry(url string, timeout time.Duration) (*Conn, error) {
+func ConnectWithRetry(url string, timeout time.Duration, onConnect OnConnection) (*Conn, error) {
 	cfg := NewConfig(url)
 	cfg.Timeout = timeout
 	cfg.AutoRetry = true
+	cfg.OnConnect = onConnect
 	return cfg.Connect()
 }
 
 func _create_connection(cfg *Config) (*Conn, error) {
-	// log.Printf("Connecting to: %s / %s\n", cfg.url, addr)
-	conn, err := createSocketConnection(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	mmdc := &Conn{socket: conn,
-		writeChan:   make(chan []byte),
+	mmdc := &Conn{
 		dispatch:    make(map[ChannelId]chan ChannelMsg, 1024),
 		callTimeout: time.Second * 30,
 		services:    make(map[string]ServiceFunc),
 		config:      cfg,
 	}
 
-	mmdc.startWriter()
-	mmdc.startReader()
+	err := mmdc.createSocketConnection()
+	if err != nil {
+		return nil, err
+	}
 
-	mmdc.handshake()
-	return mmdc, nil
+	return mmdc, err
 }
 
 func (c *Conn) reconnect() {
@@ -100,48 +98,52 @@ func (c *Conn) reconnect() {
 		log.Panicln("Failed to close socket: ", err)
 	}
 
-	conn, err := createSocketConnection(c.config)
+	err = c.createSocketConnection()
 	if err != nil {
 		log.Panicln("Failed to reconnect: ", err)
 	}
-
-	log.Println("Socket reset")
-	c.socket = conn
-
-	//Create a new write channel
-	c.writeChan = make(chan []byte)
-
-	log.Println("Reconnected")
-	c.dlock.Unlock()
-
-	c.startWriter()
-	c.startReader()
-	c.handshake()
+	log.Println("Socket reset. Reconnected to mmd")
 }
 
-func createSocketConnection(cfg *Config) (*net.TCPConn, error) {
-	addr, err := net.ResolveTCPAddr("tcp", cfg.Url)
+func (c *Conn) createSocketConnection() (error) {
+	addr, err := net.ResolveTCPAddr("tcp", c.config.Url)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	start := time.Now()
 	for {
 		conn, err := net.DialTCP("tcp", nil, addr)
-		if err != nil && cfg.AutoRetry && time.Since(start) < cfg.Timeout {
+		if err != nil && c.config.AutoRetry && time.Since(start) < c.config.Timeout {
 			time.Sleep(5 * time.Second)
 			log.Println("Disconnected. Retrying again")
 			continue
 		}
 
 		if err == nil {
-			conn.SetWriteBuffer(cfg.WriteSz)
-			conn.SetReadBuffer(cfg.ReadSz)
+			conn.SetWriteBuffer(c.config.WriteSz)
+			conn.SetReadBuffer(c.config.ReadSz)
+			c.socket = conn
+			return c.onSocketConnection()
 		}
 
-		return conn, err
+		return err
 	}
 }
+
+func (c *Conn) onSocketConnection() (error) {
+	c.writeChan = make(chan []byte)
+	c.startWriter()
+	c.startReader()
+	c.handshake()
+
+	if c.config.OnConnect != nil {
+		return c.config.OnConnect(c)
+	}
+
+	return nil
+}
+
 
 // Conn Connection and channel dispatch map
 type Conn struct {
@@ -325,6 +327,7 @@ func (c *Conn) onDisconnect() {
 
 func (c *Conn) cleanupReader() {
 	log.Println("Cleaning up reader")
+	defer c.dlock.Unlock()
 	c.socket.CloseRead()
 	c.dlock.Lock()
 	for k, v := range c.dispatch {
