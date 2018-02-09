@@ -18,6 +18,8 @@ import (
 var log = logpkg.New(os.Stdout, "[mmd] ", logpkg.LstdFlags|logpkg.Lmicroseconds)
 var mmdUrl = "localhost:9999"
 
+const defaultTimeout = time.Second * 30
+
 func init() {
 	flag.StringVar(&mmdUrl, "mmd", mmdUrl, "Sets default MMD Url")
 }
@@ -28,19 +30,26 @@ var EOC = errors.New("End Of Channel")
 // ServiceFunc Handler callback for registered services
 type ServiceFunc func(*Conn, *Chan, *ChannelCreate)
 
+type OnConnection func(*Conn) error
+
 type Config struct {
-	Url     string
-	ReadSz  int
-	WriteSz int
-	AppName string
+	Url       string
+	ReadSz    int
+	WriteSz   int
+	AppName   string
+	AutoRetry bool
+	Timeout   time.Duration
+	OnConnect OnConnection
 }
 
 func NewConfig(url string) *Config {
 	return &Config{
-		Url:     url,
-		ReadSz:  64 * 1024,
-		WriteSz: 64 * 1024,
-		AppName: fmt.Sprintf("Go:%s", filepath.Base(os.Args[0])),
+		Url:       url,
+		ReadSz:    64 * 1024,
+		WriteSz:   64 * 1024,
+		AppName:   fmt.Sprintf("Go:%s", filepath.Base(os.Args[0])),
+		AutoRetry: false,
+		Timeout:   defaultTimeout,
 	}
 }
 
@@ -59,30 +68,80 @@ func ConnectTo(url string) (*Conn, error) {
 	return NewConfig(url).Connect()
 }
 
+func ConnectWithRetry(url string, timeout time.Duration, onConnect OnConnection) (*Conn, error) {
+	cfg := NewConfig(url)
+	cfg.Timeout = timeout
+	cfg.AutoRetry = true
+	cfg.OnConnect = onConnect
+	return cfg.Connect()
+}
+
 func _create_connection(cfg *Config) (*Conn, error) {
-	addr, err := net.ResolveTCPAddr("tcp", cfg.Url)
-	if err != nil {
-		return nil, err
-	}
-	// log.Printf("Connecting to: %s / %s\n", cfg.url, addr)
-	conn, err := net.DialTCP("tcp", nil, addr)
-	if err != nil {
-		return nil, err
-	}
-	conn.SetWriteBuffer(cfg.WriteSz)
-	conn.SetReadBuffer(cfg.ReadSz)
-	mmdc := &Conn{socket: conn,
-		writeChan:   make(chan []byte),
+	mmdc := &Conn{
 		dispatch:    make(map[ChannelId]chan ChannelMsg, 1024),
 		callTimeout: time.Second * 30,
 		services:    make(map[string]ServiceFunc),
+		config:      cfg,
 	}
-	go writer(mmdc)
-	go reader(mmdc)
-	handshake := []byte{1, 1}
-	handshake = append(handshake, cfg.AppName...)
-	mmdc.WriteFrame(handshake)
-	return mmdc, nil
+
+	err := mmdc.createSocketConnection()
+	if err != nil {
+		return nil, err
+	}
+
+	return mmdc, err
+}
+
+func (c *Conn) reconnect() {
+	err := c.closeSocket()
+	if err != nil {
+		log.Panicln("Failed to close socket: ", err)
+	}
+
+	err = c.createSocketConnection()
+	if err != nil {
+		log.Panicln("Failed to reconnect: ", err)
+	}
+	log.Println("Socket reset. Reconnected to mmd")
+}
+
+func (c *Conn) createSocketConnection() error {
+	addr, err := net.ResolveTCPAddr("tcp", c.config.Url)
+	if err != nil {
+		return err
+	}
+
+	start := time.Now()
+	for {
+		conn, err := net.DialTCP("tcp", nil, addr)
+		if err != nil && c.config.AutoRetry && time.Since(start) < c.config.Timeout {
+			time.Sleep(5 * time.Second)
+			log.Println("Disconnected. Retrying again")
+			continue
+		}
+
+		if err == nil {
+			conn.SetWriteBuffer(c.config.WriteSz)
+			conn.SetReadBuffer(c.config.ReadSz)
+			c.socket = conn
+			return c.onSocketConnection()
+		}
+
+		return err
+	}
+}
+
+func (c *Conn) onSocketConnection() error {
+	c.writeChan = make(chan []byte)
+	c.startWriter()
+	c.startReader()
+	c.handshake()
+
+	if c.config.OnConnect != nil {
+		return c.config.OnConnect(c)
+	}
+
+	return nil
 }
 
 // Conn Connection and channel dispatch map
@@ -93,6 +152,7 @@ type Conn struct {
 	dlock       sync.RWMutex
 	callTimeout time.Duration
 	services    map[string]ServiceFunc
+	config      *Config
 }
 
 // Chan MMD Channel
@@ -256,8 +316,17 @@ func (c *Conn) Close() {
 	close(c.writeChan)
 }
 
-func cleanupReader(c *Conn) {
+func (c *Conn) onDisconnect() {
+	c.cleanupReader()
+	c.cleanupWriter()
+	if c.config.AutoRetry {
+		c.reconnect()
+	}
+}
+
+func (c *Conn) cleanupReader() {
 	log.Println("Cleaning up reader")
+	defer c.dlock.Unlock()
 	c.socket.CloseRead()
 	c.dlock.Lock()
 	for k, v := range c.dispatch {
@@ -266,10 +335,44 @@ func cleanupReader(c *Conn) {
 	}
 }
 
+func (c *Conn) cleanupWriter() {
+	c.Close()
+	c.socket.CloseWrite()
+}
+
+func (c *Conn) handshake() {
+	handshake := []byte{1, 1}
+	handshake = append(handshake, c.config.AppName...)
+
+	c.WriteFrame(handshake)
+}
+
+func (c *Conn) WriteFrame(data []byte) {
+	c.writeChan <- data
+}
+
+func (c *Conn) startReader() {
+	go reader(c)
+}
+
+func (c *Conn) startWriter() {
+	go writer(c)
+}
+
+func (c *Conn) closeSocket() error {
+	if c.socket != nil {
+		err := c.socket.Close()
+		return err
+	}
+
+	log.Println("Cannot close a nil socket")
+	return nil
+}
+
 func reader(c *Conn) {
 	fszb := make([]byte, 4)
 	buff := make([]byte, 256)
-	defer cleanupReader(c)
+	defer c.onDisconnect()
 	for {
 		num, err := c.socket.Read(fszb)
 		if err != nil {
@@ -358,8 +461,4 @@ func writer(c *Conn) {
 			}
 		}
 	}
-}
-
-func (c *Conn) WriteFrame(data []byte) {
-	c.writeChan <- data
 }
