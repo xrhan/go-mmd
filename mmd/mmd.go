@@ -100,7 +100,8 @@ func (c *Conn) reconnect() {
 
 	err = c.createSocketConnection()
 	if err != nil {
-		log.Panicln("Failed to reconnect: ", err)
+		log.Println("Failed to reconnect: ", err)
+		return
 	}
 	log.Println("Socket reset. Reconnected to mmd")
 }
