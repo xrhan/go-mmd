@@ -44,12 +44,12 @@ type Config struct {
 
 func NewConfig(url string) *Config {
 	return &Config{
-		Url:       url,
-		ReadSz:    64 * 1024,
-		WriteSz:   64 * 1024,
-		AppName:   fmt.Sprintf("Go:%s", filepath.Base(os.Args[0])),
-		AutoRetry: false,
-		ReconnectInterval:   defaultTimeout,
+		Url:               url,
+		ReadSz:            64 * 1024,
+		WriteSz:           64 * 1024,
+		AppName:           fmt.Sprintf("Go:%s", filepath.Base(os.Args[0])),
+		AutoRetry:         false,
+		ReconnectInterval: defaultTimeout,
 	}
 }
 
