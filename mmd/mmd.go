@@ -99,10 +99,7 @@ func (c *Conn) reconnect() {
 	}
 
 	err = c.createSocketConnection()
-	if err != nil {
-		log.Println("Failed to reconnect: ", err)
-		return
-	}
+
 	log.Println("Socket reset. Reconnected to mmd")
 }
 
@@ -116,7 +113,7 @@ func (c *Conn) createSocketConnection() error {
 		conn, err := net.DialTCP("tcp", nil, addr)
 		if err != nil && c.config.AutoRetry {
 			time.Sleep(c.config.ReconnectInterval)
-			log.Println("Disconnected. Retrying again")
+			log.Println("Failed to connect : ", err)
 			continue
 		}
 
