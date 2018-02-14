@@ -18,7 +18,7 @@ import (
 var log = logpkg.New(os.Stdout, "[mmd] ", logpkg.LstdFlags|logpkg.Lmicroseconds)
 var mmdUrl = "localhost:9999"
 
-const defaultTimeout = time.Second * 30
+const reconnectInterval = time.Second * 10
 
 func init() {
 	flag.StringVar(&mmdUrl, "mmd", mmdUrl, "Sets default MMD Url")
@@ -49,7 +49,7 @@ func NewConfig(url string) *Config {
 		WriteSz:           64 * 1024,
 		AppName:           fmt.Sprintf("Go:%s", filepath.Base(os.Args[0])),
 		AutoRetry:         false,
-		ReconnectInterval: defaultTimeout,
+		ReconnectInterval: reconnectInterval,
 	}
 }
 
