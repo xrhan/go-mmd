@@ -33,13 +33,13 @@ type ServiceFunc func(*Conn, *Chan, *ChannelCreate)
 type OnConnection func(*Conn) error
 
 type Config struct {
-	Url       string
-	ReadSz    int
-	WriteSz   int
-	AppName   string
-	AutoRetry bool
-	Timeout   time.Duration
-	OnConnect OnConnection
+	Url               string
+	ReadSz            int
+	WriteSz           int
+	AppName           string
+	AutoRetry         bool
+	ReconnectInterval time.Duration
+	OnConnect         OnConnection
 }
 
 func NewConfig(url string) *Config {
@@ -49,7 +49,7 @@ func NewConfig(url string) *Config {
 		WriteSz:   64 * 1024,
 		AppName:   fmt.Sprintf("Go:%s", filepath.Base(os.Args[0])),
 		AutoRetry: false,
-		Timeout:   defaultTimeout,
+		ReconnectInterval:   defaultTimeout,
 	}
 }
 
@@ -68,9 +68,9 @@ func ConnectTo(url string) (*Conn, error) {
 	return NewConfig(url).Connect()
 }
 
-func ConnectWithRetry(url string, timeout time.Duration, onConnect OnConnection) (*Conn, error) {
+func ConnectWithRetry(url string, reconnectInterval time.Duration, onConnect OnConnection) (*Conn, error) {
 	cfg := NewConfig(url)
-	cfg.Timeout = timeout
+	cfg.ReconnectInterval = reconnectInterval
 	cfg.AutoRetry = true
 	cfg.OnConnect = onConnect
 	return cfg.Connect()
@@ -112,11 +112,10 @@ func (c *Conn) createSocketConnection() error {
 		return err
 	}
 
-	start := time.Now()
 	for {
 		conn, err := net.DialTCP("tcp", nil, addr)
-		if err != nil && c.config.AutoRetry && time.Since(start) < c.config.Timeout {
-			time.Sleep(5 * time.Second)
+		if err != nil && c.config.AutoRetry {
+			time.Sleep(c.config.ReconnectInterval)
 			log.Println("Disconnected. Retrying again")
 			continue
 		}
