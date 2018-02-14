@@ -98,9 +98,11 @@ func (c *Conn) reconnect() {
 		log.Panicln("Failed to close socket: ", err)
 	}
 
+	start := time.Now()
 	err = c.createSocketConnection()
+	elapsed := time.Since(start)
 
-	log.Println("Socket reset. Reconnected to mmd")
+	log.Println("Socket reset. Connected to mmd after : ", elapsed)
 }
 
 func (c *Conn) createSocketConnection() error {
