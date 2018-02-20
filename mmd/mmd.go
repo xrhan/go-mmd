@@ -18,7 +18,7 @@ import (
 var log = logpkg.New(os.Stdout, "[mmd] ", logpkg.LstdFlags|logpkg.Lmicroseconds)
 var mmdUrl = "localhost:9999"
 
-const defaultTimeout = time.Second * 30
+const reconnectInterval = time.Second * 10
 
 func init() {
 	flag.StringVar(&mmdUrl, "mmd", mmdUrl, "Sets default MMD Url")
@@ -33,23 +33,23 @@ type ServiceFunc func(*Conn, *Chan, *ChannelCreate)
 type OnConnection func(*Conn) error
 
 type Config struct {
-	Url       string
-	ReadSz    int
-	WriteSz   int
-	AppName   string
-	AutoRetry bool
-	Timeout   time.Duration
-	OnConnect OnConnection
+	Url               string
+	ReadSz            int
+	WriteSz           int
+	AppName           string
+	AutoRetry         bool
+	ReconnectInterval time.Duration
+	OnConnect         OnConnection
 }
 
 func NewConfig(url string) *Config {
 	return &Config{
-		Url:       url,
-		ReadSz:    64 * 1024,
-		WriteSz:   64 * 1024,
-		AppName:   fmt.Sprintf("Go:%s", filepath.Base(os.Args[0])),
-		AutoRetry: false,
-		Timeout:   defaultTimeout,
+		Url:               url,
+		ReadSz:            64 * 1024,
+		WriteSz:           64 * 1024,
+		AppName:           fmt.Sprintf("Go:%s", filepath.Base(os.Args[0])),
+		AutoRetry:         false,
+		ReconnectInterval: reconnectInterval,
 	}
 }
 
@@ -68,9 +68,9 @@ func ConnectTo(url string) (*Conn, error) {
 	return NewConfig(url).Connect()
 }
 
-func ConnectWithRetry(url string, timeout time.Duration, onConnect OnConnection) (*Conn, error) {
+func ConnectWithRetry(url string, reconnectInterval time.Duration, onConnect OnConnection) (*Conn, error) {
 	cfg := NewConfig(url)
-	cfg.Timeout = timeout
+	cfg.ReconnectInterval = reconnectInterval
 	cfg.AutoRetry = true
 	cfg.OnConnect = onConnect
 	return cfg.Connect()
@@ -98,11 +98,11 @@ func (c *Conn) reconnect() {
 		log.Panicln("Failed to close socket: ", err)
 	}
 
+	start := time.Now()
 	err = c.createSocketConnection()
-	if err != nil {
-		log.Panicln("Failed to reconnect: ", err)
-	}
-	log.Println("Socket reset. Reconnected to mmd")
+	elapsed := time.Since(start)
+
+	log.Println("Socket reset. Connected to mmd after :", elapsed)
 }
 
 func (c *Conn) createSocketConnection() error {
@@ -111,12 +111,11 @@ func (c *Conn) createSocketConnection() error {
 		return err
 	}
 
-	start := time.Now()
 	for {
 		conn, err := net.DialTCP("tcp", nil, addr)
-		if err != nil && c.config.AutoRetry && time.Since(start) < c.config.Timeout {
-			time.Sleep(5 * time.Second)
-			log.Println("Disconnected. Retrying again")
+		if err != nil && c.config.AutoRetry {
+			time.Sleep(c.config.ReconnectInterval)
+			log.Println("Failed to connect :", err)
 			continue
 		}
 
