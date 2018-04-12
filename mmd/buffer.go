@@ -136,10 +136,9 @@ func (b *Buffer) doubleCapacity() {
 	if newCapacity == 0 {
 		newCapacity = 1
 	}
-	tmp := make([]byte, cap(b.data))
+	tmp := make([]byte, newCapacity)
 	copy(tmp, b.data)
-	b.data = make([]byte, newCapacity)
-	copy(b.data, tmp)
+	b.data = tmp
 }
 
 func (b *Buffer) ReadVaruint() (uint, error) {
