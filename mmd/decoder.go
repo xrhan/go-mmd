@@ -13,8 +13,6 @@ const microsInSecond = 1000 * 1000
 
 // Decode decodes the next mmd message from a given buffer
 func Decode(buff *Buffer) (interface{}, error) {
-	b := make([]byte, 20480)
-	b = b[:runtime.Stack(b, false)]
 	tag, err := buff.ReadByte()
 	if err != nil {
 		return nil, err
