@@ -190,6 +190,17 @@ func (c *Chan) Send(body interface{}) error {
 	return nil
 }
 
+func (c *Chan) SendLong(body interface{}, length int) error {
+	cm := ChannelMsg{Channel: c.Id, Body: body}
+	buff := NewBuffer(length)
+	err := Encode(buff, cm)
+	if err != nil {
+		return err
+	}
+	c.con.Send(buff.Flip())
+	return nil
+}
+
 func (c *Chan) Errorf(code int, format string, args ...interface{}) error {
 	return c.Error(code, fmt.Sprintf(format, args...))
 }
